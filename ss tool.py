@@ -9,6 +9,10 @@ import datetime
 import json
 import ctypes
 import ctypes.wintypes as wintypes
+import urllib.request
+import hashlib
+import base64
+import subprocess
 
 try:
     import psutil
@@ -179,6 +183,7 @@ class Scanner(tk.Tk):
         self._build()
         self._check_deps()
         self._write(f"  📁  Scanning folder: {self._mc_folder}", "ok")
+        self.after(800, self._auto_sysinfo)
 
     def _build(self):
         header = tk.Frame(self, bg=BG2, height=56)
@@ -189,7 +194,7 @@ class Scanner(tk.Tk):
         tf.pack(side="left", padx=20, pady=10)
         tk.Label(tf, text="⚡", font=("Segoe UI", 18), bg=BG2, fg=ACCENT).pack(side="left")
         tk.Label(tf, text="  MC CHEAT SCANNER", font=("Segoe UI Semibold", 14), bg=BG2, fg=TEXT).pack(side="left")
-        tk.Label(tf, text="  v2.0", font=UI, bg=BG2, fg=DIM).pack(side="left")
+        tk.Label(tf, text="  v3.0", font=UI, bg=BG2, fg=DIM).pack(side="left")
 
         self._status_lbl = tk.Label(header, textvariable=self._status,
                                      font=UI, bg=GREEN, fg=BG, padx=10, pady=2)
@@ -197,7 +202,40 @@ class Scanner(tk.Tk):
 
         tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
 
-        cfg = tk.Frame(self, bg=BG3, pady=12)
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("scan.Horizontal.TProgressbar",
+                         troughcolor=BG2, background=ACCENT,
+                         lightcolor=ACCENT, darkcolor=ACCENT, bordercolor=BG)
+        style.configure("Dark.TNotebook", background=BG2, borderwidth=0)
+        style.configure("Dark.TNotebook.Tab", background=BG3, foreground=DIM,
+                         padding=[16, 6], font=("Segoe UI", 10))
+        style.map("Dark.TNotebook.Tab",
+                   background=[("selected", BG)],
+                   foreground=[("selected", ACCENT)])
+
+        self._notebook = ttk.Notebook(self, style="Dark.TNotebook")
+        self._notebook.pack(fill="both", expand=True)
+
+        self._build_scan_tab()
+        self._build_sysinfo_tab()
+
+        bar = tk.Frame(self, bg=BG3, height=26)
+        bar.pack(fill="x", side="bottom")
+        bar.pack_propagate(False)
+
+        self._bot_lbl = tk.Label(bar, text="Select an output folder and press START SCAN",
+                                  font=("Segoe UI", 8), bg=BG3, fg=DIM)
+        self._bot_lbl.pack(side="left", padx=12, pady=4)
+
+        self._time_lbl = tk.Label(bar, text="", font=("Segoe UI", 8), bg=BG3, fg=DIM)
+        self._time_lbl.pack(side="right", padx=12)
+
+    def _build_scan_tab(self):
+        tab = tk.Frame(self._notebook, bg=BG)
+        self._notebook.add(tab, text="  🔍  Cheat Scanner  ")
+
+        cfg = tk.Frame(tab, bg=BG3, pady=12)
         cfg.pack(fill="x")
 
         tk.Label(cfg, text="Output Folder:", font=BOLD, bg=BG3, fg=DIM).pack(side="left", padx=(20, 8))
@@ -205,13 +243,13 @@ class Scanner(tk.Tk):
         self._dir_entry = tk.Entry(cfg, textvariable=self._outdir, font=UI,
                                     bg=BG, fg=TEXT, insertbackground=ACCENT,
                                     relief="flat", bd=0, highlightthickness=1,
-                                    highlightcolor=ACCENT, highlightbackground=BORDER, width=52)
+                                    highlightcolor=ACCENT, highlightbackground=BORDER, width=40)
         self._dir_entry.pack(side="left", ipady=5, padx=(0, 8))
 
         tk.Button(cfg, text="📁  Browse", font=UI, bg=BG2, fg=ACCENT,
                   activebackground=BORDER, activeforeground=ACCENT,
                   relief="flat", bd=0, padx=14, pady=5, cursor="hand2",
-                  command=self._browse).pack(side="left", padx=(0, 20))
+                  command=self._browse).pack(side="left", padx=(0, 12))
 
         tk.Label(cfg, text=f"🗂  {self._mc_folder}", font=("Segoe UI", 9),
                  bg=BG3, fg=ACCENT).pack(side="left", padx=(0, 12))
@@ -230,19 +268,14 @@ class Scanner(tk.Tk):
                                     command=self._do_stop, state="disabled")
         self._stop_btn.pack(side="left")
 
-        pb_frame = tk.Frame(self, bg=BG, pady=6)
+        pb_frame = tk.Frame(tab, bg=BG, pady=6)
         pb_frame.pack(fill="x", padx=20)
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("scan.Horizontal.TProgressbar",
-                         troughcolor=BG2, background=ACCENT,
-                         lightcolor=ACCENT, darkcolor=ACCENT, bordercolor=BG)
         ttk.Progressbar(pb_frame, variable=self._progress,
                          style="scan.Horizontal.TProgressbar",
                          maximum=100).pack(fill="x")
 
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
-        content = tk.Frame(self, bg=BG)
+        tk.Frame(tab, bg=BORDER, height=1).pack(fill="x")
+        content = tk.Frame(tab, bg=BG)
         content.pack(fill="both", expand=True)
 
         left = tk.Frame(content, bg=BG2, width=340)
@@ -301,16 +334,69 @@ class Scanner(tk.Tk):
         self._log.tag_config("dim",      foreground=DIM)
         self._log.tag_config("normal",   foreground=TEXT)
 
-        bar = tk.Frame(self, bg=BG3, height=26)
-        bar.pack(fill="x", side="bottom")
-        bar.pack_propagate(False)
+    def _build_sysinfo_tab(self):
+        tab = tk.Frame(self._notebook, bg=BG)
+        self._notebook.add(tab, text="  🌐  System Info  ")
 
-        self._bot_lbl = tk.Label(bar, text="Select an output folder and press START SCAN",
-                                  font=("Segoe UI", 8), bg=BG3, fg=DIM)
-        self._bot_lbl.pack(side="left", padx=12, pady=4)
+        top = tk.Frame(tab, bg=BG3, pady=10)
+        top.pack(fill="x")
 
-        self._time_lbl = tk.Label(bar, text="", font=("Segoe UI", 8), bg=BG3, fg=DIM)
-        self._time_lbl.pack(side="right", padx=12)
+        self._sysinfo_btn = tk.Button(top, text="▶  RUN CHECKS", font=BOLD,
+                                       bg=GREEN, fg=BG, activebackground="#26c25a",
+                                       activeforeground=BG, relief="flat", bd=0,
+                                       padx=20, pady=6, cursor="hand2",
+                                       command=self._start_sysinfo)
+        self._sysinfo_btn.pack(side="left", padx=20)
+
+        tk.Label(top, text="Checks country, VPN, HWID and Minecraft uptime",
+                 font=UI, bg=BG3, fg=DIM).pack(side="left", padx=8)
+
+        tk.Frame(tab, bg=BORDER, height=1).pack(fill="x")
+
+        cards = tk.Frame(tab, bg=BG)
+        cards.pack(fill="x", padx=16, pady=12)
+
+        def make_card(parent, title):
+            card = tk.Frame(parent, bg=BG2, padx=14, pady=10)
+            card.pack(side="left", fill="both", expand=True, padx=6)
+            tk.Label(card, text=title, font=("Segoe UI", 8), bg=BG2, fg=DIM).pack(anchor="w")
+            val = tk.StringVar(value="—")
+            lbl = tk.Label(card, textvariable=val, font=("Segoe UI Semibold", 13),
+                            bg=BG2, fg=TEXT, wraplength=220, justify="left")
+            lbl.pack(anchor="w", pady=(2, 0))
+            return val, lbl
+
+        self._si_country, self._si_country_lbl = make_card(cards, "🌍  Country")
+        self._si_vpn,     self._si_vpn_lbl     = make_card(cards, "🔒  VPN / Proxy")
+        self._si_uptime,  self._si_uptime_lbl  = make_card(cards, "⏱  Minecraft Uptime")
+
+        tk.Frame(tab, bg=BORDER, height=1).pack(fill="x")
+
+        hwid_frame = tk.Frame(tab, bg=BG3, pady=14)
+        hwid_frame.pack(fill="x", padx=16, pady=(8, 0))
+
+        tk.Label(hwid_frame, text="🖥  HWID", font=BOLD, bg=BG3, fg=ACCENT).pack(anchor="w", padx=4)
+        self._si_hwid = tk.StringVar(value="—")
+        tk.Label(hwid_frame, textvariable=self._si_hwid, font=MONO,
+                 bg=BG3, fg=TEXT, wraplength=900, justify="left").pack(anchor="w", padx=4, pady=(4, 0))
+
+        tk.Frame(tab, bg=BORDER, height=1).pack(fill="x", pady=(8, 0))
+
+        tk.Label(tab, text="  📋  LOG", font=BOLD, bg=BG, fg=ACCENT, anchor="w").pack(fill="x", padx=12, pady=(8, 4))
+
+        self._si_log = scrolledtext.ScrolledText(tab, bg=BG, fg=TEXT, font=MONO,
+                                                  relief="flat", bd=0,
+                                                  insertbackground=ACCENT,
+                                                  state="disabled", wrap="word",
+                                                  padx=10, pady=8)
+        self._si_log.pack(fill="both", expand=True)
+
+        self._si_log.tag_config("head",    foreground=ACCENT, font=("Consolas", 9, "bold"))
+        self._si_log.tag_config("ok",      foreground=GREEN)
+        self._si_log.tag_config("warning", foreground=ORANGE)
+        self._si_log.tag_config("critical",foreground=RED, font=("Consolas", 9, "bold"))
+        self._si_log.tag_config("dim",     foreground=DIM)
+        self._si_log.tag_config("normal",  foreground=TEXT)
 
     def _write(self, text, tag="normal"):
         self._log.configure(state="normal")
@@ -659,6 +745,146 @@ class Scanner(tk.Tk):
         except ImportError:
             pass
         self._write("  ✔  Done", "ok")
+
+    def _auto_sysinfo(self):
+        self._notebook.select(1)
+        self._start_sysinfo()
+
+    def _si_write(self, text, tag="normal"):
+        self._si_log.configure(state="normal")
+        self._si_log.insert("end", text + "\n", tag)
+        self._si_log.configure(state="disabled")
+        self._si_log.see("end")
+
+    def _start_sysinfo(self):
+        self._sysinfo_btn.configure(state="disabled")
+        self._si_country.set("Checking…")
+        self._si_vpn.set("Checking…")
+        self._si_uptime.set("Checking…")
+        self._si_hwid.set("Generating…")
+        self._si_log.configure(state="normal")
+        self._si_log.delete("1.0", "end")
+        self._si_log.configure(state="disabled")
+        threading.Thread(target=self._run_sysinfo, daemon=True).start()
+
+    def _run_sysinfo(self):
+        self._si_write(f"\n  Started : {datetime.datetime.now().strftime('%Y-%m-%d  %H:%M:%S')}", "head")
+        self._si_write(f"  Host    : {os.environ.get('COMPUTERNAME', 'Unknown')}", "dim")
+        self._si_write(f"  User    : {os.environ.get('USERNAME', 'Unknown')}\n", "dim")
+
+        self._si_write("  ─── Country & VPN ───────────────────────────────────────", "dim")
+        try:
+            req = urllib.request.Request(
+                "https://api.ip2location.io/",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=8) as r:
+                ip_data = json.loads(r.read().decode())
+
+            country = ip_data.get("country_name", "Unknown")
+            is_proxy = ip_data.get("is_proxy", False)
+            ip_addr  = ip_data.get("ip", "Unknown")
+
+            self._si_country.set(country)
+            self._si_country_lbl.configure(fg=TEXT)
+            self._si_write(f"  ✔  IP: {ip_addr}", "ok")
+            self._si_write(f"  ✔  Country: {country}", "ok")
+
+            if is_proxy:
+                self._si_vpn.set("⚠  VPN / Proxy Detected")
+                self._si_vpn_lbl.configure(fg=RED)
+                self._si_write("  🔴  VPN or proxy detected via ip2location", "critical")
+                self._finding("critical", "VPN Detected", f"IP {ip_addr} flagged as proxy/VPN")
+            else:
+                vpn_adapter = self._detect_vpn_adapter()
+                if vpn_adapter:
+                    self._si_vpn.set(f"⚠  VPN Adapter: {vpn_adapter}")
+                    self._si_vpn_lbl.configure(fg=ORANGE)
+                    self._si_write(f"  🟠  VPN adapter found: {vpn_adapter}", "warning")
+                    self._finding("warning", "VPN Adapter", f"Adapter without MAC: {vpn_adapter}")
+                else:
+                    self._si_vpn.set("✔  No VPN Detected")
+                    self._si_vpn_lbl.configure(fg=GREEN)
+                    self._si_write("  ✔  No VPN detected", "ok")
+
+        except Exception as e:
+            self._si_country.set("Error")
+            self._si_vpn.set("Error")
+            self._si_write(f"  ⚠  Could not reach ip2location: {e}", "warning")
+
+        self._si_write("\n  ─── Minecraft Uptime ────────────────────────────────────", "dim")
+        try:
+            uptime_str = "Not running"
+            if HAS_PSUTIL:
+                for proc in psutil.process_iter(['pid', 'name', 'create_time']):
+                    try:
+                        name = (proc.info['name'] or "").lower()
+                        if "javaw" in name or "java" in name:
+                            ct = datetime.datetime.fromtimestamp(proc.info['create_time'])
+                            elapsed = datetime.datetime.now() - ct
+                            h = int(elapsed.total_seconds() // 3600)
+                            m = int((elapsed.total_seconds() % 3600) // 60)
+                            s = int(elapsed.total_seconds() % 60)
+                            uptime_str = f"PID {proc.pid} — {h}h {m}m {s}s"
+                            self._si_write(f"  ✔  {proc.info['name']} PID {proc.pid} started at {ct.strftime('%H:%M:%S')} — running {h}h {m}m {s}s", "ok")
+                            break
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+            if uptime_str == "Not running":
+                self._si_write("  ⚠  No Minecraft process found", "warning")
+            self._si_uptime.set(uptime_str)
+        except Exception as e:
+            self._si_uptime.set("Error")
+            self._si_write(f"  ⚠  Uptime check failed: {e}", "warning")
+
+        self._si_write("\n  ─── HWID ────────────────────────────────────────────────", "dim")
+        try:
+            hwid = self._generate_hwid()
+            self._si_hwid.set(hwid)
+            self._si_write(f"  ✔  HWID generated", "ok")
+            self._si_write(f"  {hwid}", "dim")
+        except Exception as e:
+            self._si_hwid.set("Error")
+            self._si_write(f"  ⚠  HWID generation failed: {e}", "warning")
+
+        self._si_write("\n  ✔  All checks complete", "ok")
+        self.after(0, lambda: self._sysinfo_btn.configure(state="normal"))
+
+    def _detect_vpn_adapter(self):
+        if sys.platform != "win32":
+            return None
+        try:
+            result = subprocess.run(
+                ["powershell", "-Command",
+                 "Get-NetAdapter | Where-Object { -not $_.MacAddress -and $_.Status -eq 'Up' } | Select-Object -ExpandProperty Name"],
+                capture_output=True, text=True, timeout=8
+            )
+            name = result.stdout.strip()
+            return name if name else None
+        except Exception:
+            return None
+
+    def _generate_hwid(self):
+        if sys.platform != "win32":
+            return "Windows-only"
+        try:
+            def wmi_val(query):
+                r = subprocess.run(
+                    ["powershell", "-Command", query],
+                    capture_output=True, text=True, timeout=8
+                )
+                return r.stdout.strip()
+
+            mb   = wmi_val("(Get-WmiObject win32_baseboard).Manufacturer + ' ' + (Get-WmiObject win32_baseboard).Product + ' ' + (Get-WmiObject win32_baseboard).SerialNumber")
+            ram  = wmi_val("(Get-WmiObject Win32_PhysicalMemory | Select-Object -First 1 | ForEach-Object { $_.Manufacturer + ' ' + $_.PartNumber + ' ' + $_.SerialNumber })")
+            disk = wmi_val("(Get-PhysicalDisk | Select-Object -First 1 | ForEach-Object { $_.FriendlyName + ' ' + $_.MediaType + ' ' + $_.SerialNumber })")
+            cpu  = wmi_val("(Get-WmiObject Win32_Processor).Name")
+
+            raw  = f"{mb} | {ram} | {disk} | {cpu}"
+            hwid = base64.b64encode(raw.encode("utf-8")).decode("utf-8").replace("=", "")
+            return hwid
+        except Exception as e:
+            return f"Error: {e}"
 
     def _write_report(self):
         out  = self._outdir.get()
