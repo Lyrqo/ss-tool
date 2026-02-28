@@ -24,8 +24,8 @@ $fBold = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyl
 $fMono = New-Object System.Drawing.Font("Consolas", 9)
 $fHead = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
 $fTiny = New-Object System.Drawing.Font("Consolas", 8)
+$fBig  = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
 
-# --- Cheat data ---
 $cheatStrings = @(
     "AimAssist","AnchorTweaks","AutoAnchor","AutoCrystal","AutoDoubleHand",
     "AutoHitCrystal","AutoPot","AutoTotem","AutoArmor","InventoryTotem",
@@ -56,13 +56,8 @@ $SI_PATHS = @(
     "C:\Tools\ProcessHacker\ProcessHacker.exe"
 )
 
-$global:McFolder = ""
-$global:OutFolder = ""
-$global:StopScan  = $false
-$global:StopMem   = $false
-$global:StopSI    = $false
+$global:StopAll = $false
 
-# --- Helpers ---
 function New-Lbl($txt,$x,$y,$w,$h,$fg,$bg,$font=$fUI,$align="MiddleLeft") {
     $l = New-Object System.Windows.Forms.Label
     $l.Text=$txt; $l.Location=New-Object System.Drawing.Point($x,$y)
@@ -79,25 +74,25 @@ function New-Btn($txt,$x,$y,$w,$h,$bg,$fg) {
     $b.FlatAppearance.BorderSize=0; $b.Font=$fBold; $b.Cursor="Hand"
     return $b
 }
-function New-Tbox($x,$y,$w,$h,$multi=$false) {
+function New-Tbox($x,$y,$w,$h) {
     $t = New-Object System.Windows.Forms.TextBox
     $t.Location=New-Object System.Drawing.Point($x,$y)
     $t.Size=New-Object System.Drawing.Size($w,$h)
     $t.BackColor=$cBG3; $t.ForeColor=$cTEXT; $t.BorderStyle="None"; $t.Font=$fMono
-    if ($multi) { $t.Multiline=$true; $t.ScrollBars="Vertical"; $t.ReadOnly=$true; $t.WordWrap=$true }
     return $t
 }
-function Log($box,$txt) {
-    if ($box.InvokeRequired) { $box.Invoke([Action]{ $box.AppendText("$txt`r`n"); $box.ScrollToCaret() }) }
-    else { $box.AppendText("$txt`r`n"); $box.ScrollToCaret() }
+function Log($box,$txt,$color=$null) {
+    if ($box.InvokeRequired) {
+        $box.Invoke([Action]{ $box.AppendText("$txt`r`n"); $box.ScrollToCaret() })
+    } else {
+        $box.AppendText("$txt`r`n"); $box.ScrollToCaret()
+    }
 }
 function Browse-Folder($title) {
     $shell = New-Object -ComObject Shell.Application
     $folder = $shell.BrowseForFolder(0,$title,0,0)
     if ($folder) { return $folder.Self.Path } else { return $null }
 }
-
-# --- Mod analyzer functions ---
 function Get-SHA1($filePath) {
     return (Get-FileHash -Path $filePath -Algorithm SHA1).Hash
 }
@@ -133,15 +128,18 @@ function Check-CheatStrings($filePath) {
     return $found
 }
 
-# --- Form ---
+# =====================================================================
+# FORM
+# =====================================================================
 $Form = New-Object System.Windows.Forms.Form
 $Form.Text = "SS Tool  //  MC Cheat Scanner"
-$Form.Size = New-Object System.Drawing.Size(1100,720)
-$Form.MinimumSize = New-Object System.Drawing.Size(960,600)
+$Form.Size = New-Object System.Drawing.Size(1100,820)
+$Form.MinimumSize = New-Object System.Drawing.Size(960,700)
 $Form.BackColor = $cBG
 $Form.StartPosition = "CenterScreen"
 $Form.FormBorderStyle = "Sizable"
 
+# Header
 $Header = New-Object System.Windows.Forms.Panel
 $Header.Dock = "Top"; $Header.Height = 52; $Header.BackColor = $cBG2
 $Header.Controls.Add((New-Lbl "SS TOOL  //  MC CHEAT SCANNER" 16 12 500 28 $cACCENT $cBG2 $fHead))
@@ -155,21 +153,66 @@ $NavLine = New-Object System.Windows.Forms.Panel
 $NavLine.Dock = "Top"; $NavLine.Height = 1; $NavLine.BackColor = $cBORDER
 $Form.Controls.Add($NavLine)
 
-$Nav = New-Object System.Windows.Forms.Panel
-$Nav.Dock = "Top"; $Nav.Height = 40; $Nav.BackColor = $cBG2
-$Form.Controls.Add($Nav)
+# =====================================================================
+# TOP CONTROL BAR  (paths + start/stop)
+# =====================================================================
+$CtrlBar = New-Object System.Windows.Forms.Panel
+$CtrlBar.Dock = "Top"; $CtrlBar.Height = 110; $CtrlBar.BackColor = $cBG2
+$Form.Controls.Add($CtrlBar)
 
-$NavLine2 = New-Object System.Windows.Forms.Panel
-$NavLine2.Dock = "Top"; $NavLine2.Height = 1; $NavLine2.BackColor = $cBORDER
-$Form.Controls.Add($NavLine2)
+$CtrlBar.Controls.Add((New-Lbl "Mods Folder" 12 8 120 18 $cDIM $cBG2 $fTiny))
+$McEntry = New-Tbox 12 26 620 26
+$McEntry.Text = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
+$CtrlBar.Controls.Add($McEntry)
+$bMcBrowse = New-Btn "Browse" 638 24 80 28 $cBG3 $cACCENT
+$bMcBrowse.Add_Click({
+    $p = Browse-Folder "Select Minecraft mods folder"
+    if ($p) { $McEntry.Text = $p }
+})
+$CtrlBar.Controls.Add($bMcBrowse)
+$bMcOpen = New-Btn "Open" 724 24 60 28 $cBG3 $cDIM
+$bMcOpen.Add_Click({ Start-Process explorer.exe $McEntry.Text })
+$CtrlBar.Controls.Add($bMcOpen)
 
-$Container = New-Object System.Windows.Forms.Panel
-$Container.Dock = "Fill"; $Container.BackColor = $cBG
-$Form.Controls.Add($Container)
+$CtrlBar.Controls.Add((New-Lbl "Output Folder" 12 58 120 18 $cDIM $cBG2 $fTiny))
+$OutEntry = New-Tbox 12 76 620 26
+$OutEntry.Text = "$env:USERPROFILE\Desktop"
+$CtrlBar.Controls.Add($OutEntry)
+$bOutBrowse = New-Btn "Browse" 638 74 80 28 $cBG3 $cACCENT
+$bOutBrowse.Add_Click({
+    $p = Browse-Folder "Select output folder"
+    if ($p) { $OutEntry.Text = $p }
+})
+$CtrlBar.Controls.Add($bOutBrowse)
+$bOutOpen = New-Btn "Open" 724 74 60 28 $cBG3 $cDIM
+$bOutOpen.Add_Click({ Start-Process explorer.exe $OutEntry.Text })
+$CtrlBar.Controls.Add($bOutOpen)
 
+# Big Start / Stop buttons
+$StartBtn = New-Btn "> RUN ALL SCANS" 810 20 240 32 $cGREEN $cBG
+$StartBtn.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+$CtrlBar.Controls.Add($StartBtn)
+
+$StopBtn = New-Btn "STOP" 810 60 240 32 $cRED $cWHITE
+$StopBtn.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+$StopBtn.Enabled = $false
+$CtrlBar.Controls.Add($StopBtn)
+$StopBtn.Add_Click({ $global:StopAll = $true })
+
+$CtrlLine = New-Object System.Windows.Forms.Panel
+$CtrlLine.Dock = "Top"; $CtrlLine.Height = 1; $CtrlLine.BackColor = $cBORDER
+$Form.Controls.Add($CtrlLine)
+
+# Progress bar
+$ProgBar = New-Object System.Windows.Forms.ProgressBar
+$ProgBar.Dock = "Top"; $ProgBar.Height = 6
+$ProgBar.Style = "Continuous"; $ProgBar.ForeColor = $cACCENT; $ProgBar.BackColor = $cBG2
+$Form.Controls.Add($ProgBar)
+
+# Status label
 $StatusBar = New-Object System.Windows.Forms.Panel
 $StatusBar.Dock = "Bottom"; $StatusBar.Height = 24; $StatusBar.BackColor = $cBG2
-$StatusLbl = New-Lbl "Ready - set paths in Setup then run a scan" 10 4 900 18 $cDIM $cBG2 $fTiny
+$StatusLbl = New-Lbl "Ready -- set your paths above and click RUN ALL SCANS" 10 4 1060 18 $cDIM $cBG2 $fTiny
 $StatusBar.Controls.Add($StatusLbl)
 $Form.Controls.Add($StatusBar)
 
@@ -177,686 +220,455 @@ function Set-Status($msg) {
     if ($StatusLbl.InvokeRequired) { $StatusLbl.Invoke([Action]{ $StatusLbl.Text = $msg }) }
     else { $StatusLbl.Text = $msg }
 }
-
-$Pages = @{}
-function Show-Page($name) {
-    foreach ($p in $Pages.Values) { $p.Visible = $false }
-    $Pages[$name].Visible = $true
-    foreach ($nb in $Nav.Controls) {
-        if ($nb -is [System.Windows.Forms.Button]) {
-            if ($nb.Tag -eq $name) { $nb.ForeColor = $cACCENT; $nb.BackColor = $cBG3 }
-            else { $nb.ForeColor = $cDIM; $nb.BackColor = $cBG2 }
-        }
-    }
+function Set-Prog($val) {
+    if ($ProgBar.InvokeRequired) { $ProgBar.Invoke([Action]{ $ProgBar.Value = [Math]::Min($val,100) }) }
+    else { $ProgBar.Value = [Math]::Min($val,100) }
 }
 
-$navNames = @("Setup","Scanner","Memory","Sys Info","System Informer")
-$nx = 0
-foreach ($name in $navNames) {
-    $nb = New-Object System.Windows.Forms.Button
-    $nb.Text = " $name "; $nb.Tag = $name
-    $nb.Location = New-Object System.Drawing.Point($nx,0); $nb.Size = New-Object System.Drawing.Size(140,40)
-    $nb.BackColor = $cBG2; $nb.ForeColor = $cDIM; $nb.FlatStyle = "Flat"
-    $nb.FlatAppearance.BorderSize = 0; $nb.Font = $fBold; $nb.Cursor = "Hand"
-    $nb.Add_Click({ param($s,$e) Show-Page $s.Tag })
-    $Nav.Controls.Add($nb)
-    $nx += 140
-    $page = New-Object System.Windows.Forms.Panel
-    $page.Dock = "Fill"; $page.BackColor = $cBG; $page.Visible = $false
-    $Container.Controls.Add($page)
-    $Pages[$name] = $page
+# =====================================================================
+# MAIN SPLIT: left = results panels, right = live log
+# =====================================================================
+$MainSplit = New-Object System.Windows.Forms.SplitContainer
+$MainSplit.Dock = "Fill"; $MainSplit.SplitterDistance = 440
+$MainSplit.BackColor = $cBORDER
+$MainSplit.Panel1.BackColor = $cBG
+$MainSplit.Panel2.BackColor = $cBG
+$Form.Controls.Add($MainSplit)
+
+# ---- RIGHT: Live log ----
+$MainSplit.Panel2.Controls.Add((New-Lbl "LIVE LOG" 10 8 200 18 $cDIM $cBG $fTiny))
+$LiveLog = New-Object System.Windows.Forms.TextBox
+$LiveLog.Location = New-Object System.Drawing.Point(6,28)
+$LiveLog.Dock = "Fill"
+$LiveLog.BackColor = $cBG; $LiveLog.ForeColor = $cTEXT
+$LiveLog.BorderStyle = "None"; $LiveLog.Font = $fMono
+$LiveLog.Multiline = $true; $LiveLog.ScrollBars = "Vertical"
+$LiveLog.ReadOnly = $true; $LiveLog.WordWrap = $true
+$MainSplit.Panel2.Controls.Add($LiveLog)
+
+# ---- LEFT: Result panels stacked ----
+$LeftScroll = New-Object System.Windows.Forms.Panel
+$LeftScroll.Dock = "Fill"; $LeftScroll.BackColor = $cBG
+$LeftScroll.AutoScroll = $true
+$MainSplit.Panel1.Controls.Add($LeftScroll)
+
+function New-ResultPanel($title,$color,$top) {
+    $p = New-Object System.Windows.Forms.Panel
+    $p.Location = New-Object System.Drawing.Point(8,$top)
+    $p.Size = New-Object System.Drawing.Size(410,160)
+    $p.BackColor = $cBG2
+
+    $hdr = New-Object System.Windows.Forms.Panel
+    $hdr.Dock = "Top"; $hdr.Height = 28; $hdr.BackColor = $color
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = $title; $lbl.Dock = "Fill"
+    $lbl.ForeColor = $cBG; $lbl.Font = $fBold
+    $lbl.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    $lbl.Padding = New-Object System.Windows.Forms.Padding(8,0,0,0)
+    $hdr.Controls.Add($lbl)
+    $p.Controls.Add($hdr)
+
+    $box = New-Object System.Windows.Forms.ListBox
+    $box.Location = New-Object System.Drawing.Point(0,28)
+    $box.Size = New-Object System.Drawing.Size(410,132)
+    $box.BackColor = $cBG2; $box.ForeColor = $cTEXT
+    $box.BorderStyle = "None"; $box.Font = $fMono
+    $p.Controls.Add($box)
+
+    return $p,$box
 }
 
-$pSetup   = $Pages["Setup"]
-$pScan    = $Pages["Scanner"]
-$pMemory  = $Pages["Memory"]
-$pSysInfo = $Pages["Sys Info"]
-$pSI      = $Pages["System Informer"]
+$topY = 8
+$modPanel,$modBox    = New-ResultPanel "MOD ANALYZER" $cGREEN $topY;   $topY += 168
+$memPanel,$memBox    = New-ResultPanel "MEMORY SCAN"  $cACCENT $topY; $topY += 168
+$sysPanel,$sysBox    = New-ResultPanel "SYS INFO"     $cORANGE $topY; $topY += 168
+$siPanel,$siBox      = New-ResultPanel "SI DEEP SCAN" $cRED $topY;    $topY += 168
+
+$LeftScroll.Controls.AddRange(@($modPanel,$memPanel,$sysPanel,$siPanel))
+
+# Summary bar at bottom of left
+$SummaryPanel = New-Object System.Windows.Forms.Panel
+$SummaryPanel.Location = New-Object System.Drawing.Point(8,$topY)
+$SummaryPanel.Size = New-Object System.Drawing.Size(410,60)
+$SummaryPanel.BackColor = $cBG3
+$okLbl    = New-Lbl "OK: --"    8  8  120 20 $cGREEN  $cBG3 $fBold
+$unkLbl   = New-Lbl "UNK: --"  130  8  120 20 $cORANGE $cBG3 $fBold
+$cheatLbl = New-Lbl "CHEAT: --" 252  8  150 20 $cRED    $cBG3 $fBold
+$memLbl   = New-Lbl "MEM: --"    8 32  120 20 $cACCENT $cBG3 $fBold
+$siLbl    = New-Lbl "SI: --"   130 32  120 20 $cRED    $cBG3 $fBold
+$SummaryPanel.Controls.AddRange(@($okLbl,$unkLbl,$cheatLbl,$memLbl,$siLbl))
+$LeftScroll.Controls.Add($SummaryPanel)
 
 # =====================================================================
-# SETUP PAGE
+# START BUTTON LOGIC
 # =====================================================================
-$pSetup.Controls.Add((New-Lbl "SETUP" 20 18 300 30 $cACCENT $cBG $fHead))
-$pSetup.Controls.Add((New-Lbl "Set your folders before running any scan." 20 52 600 22 $cDIM $cBG $fUI))
+$StartBtn.Add_Click({
+    $mc  = $McEntry.Text.Trim()
+    $out = $OutEntry.Text.Trim()
 
-$pSetup.Controls.Add((New-Lbl "Minecraft Mods Folder" 20 88 300 22 $cACCENT $cBG $fBold))
-$McEntry = New-Tbox 20 114 740 28
-$McEntry.Text = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
-$global:McFolder = $McEntry.Text
-$pSetup.Controls.Add($McEntry)
-$bMc = New-Btn "Browse" 770 112 100 30 $cBG3 $cACCENT
-$bMc.Add_Click({
-    $path = Browse-Folder "Select Minecraft mods folder"
-    if ($path) { $McEntry.Text = $path; $global:McFolder = $path }
-})
-$pSetup.Controls.Add($bMc)
-$bMcOpen = New-Btn "Open" 878 112 80 30 $cBG3 $cDIM
-$bMcOpen.Add_Click({
-    $p = if ($McEntry.Text.Trim()) { $McEntry.Text.Trim() } else { $env:APPDATA }
-    Start-Process explorer.exe $p
-})
-$pSetup.Controls.Add($bMcOpen)
-
-$pSetup.Controls.Add((New-Lbl "Output / Report Folder" 20 158 300 22 $cACCENT $cBG $fBold))
-$OutEntry = New-Tbox 20 184 740 28
-$OutEntry.Text = "$env:USERPROFILE\Desktop"
-$global:OutFolder = $OutEntry.Text
-$pSetup.Controls.Add($OutEntry)
-$bOut = New-Btn "Browse" 770 182 100 30 $cBG3 $cACCENT
-$bOut.Add_Click({
-    $path = Browse-Folder "Select output folder"
-    if ($path) { $OutEntry.Text = $path; $global:OutFolder = $path }
-})
-$pSetup.Controls.Add($bOut)
-$bOutOpen = New-Btn "Open" 878 182 80 30 $cBG3 $cDIM
-$bOutOpen.Add_Click({
-    $p = if ($OutEntry.Text.Trim()) { $OutEntry.Text.Trim() } else { $env:USERPROFILE }
-    Start-Process explorer.exe $p
-})
-$pSetup.Controls.Add($bOutOpen)
-
-$pSetup.Controls.Add((New-Lbl "Quick Launch" 20 228 300 22 $cACCENT $cBG $fBold))
-$ql1 = New-Btn "> Mod Scanner"   20  254 150 36 $cGREEN $cBG
-$ql2 = New-Btn "> Memory Scan"  180  254 150 36 $cACCENT $cBG
-$ql3 = New-Btn "> Sys Info"     340  254 130 36 $cORANGE $cBG
-$ql4 = New-Btn "> SI Deep Scan" 480  254 150 36 $cRED $cWHITE
-$ql1.Add_Click({ Show-Page "Scanner" })
-$ql2.Add_Click({ Show-Page "Memory" })
-$ql3.Add_Click({ Show-Page "Sys Info" })
-$ql4.Add_Click({ Show-Page "System Informer" })
-$pSetup.Controls.AddRange(@($ql1,$ql2,$ql3,$ql4))
-
-$pSetup.Controls.Add((New-Lbl "Requirements" 20 310 200 22 $cACCENT $cBG $fBold))
-$adminReq = if ($isAdmin) { "[OK] Admin" } else { "[X] Admin" }
-$winReq   = if ([System.Environment]::OSVersion.Platform -eq "Win32NT") { "[OK] Windows" } else { "[X] Windows" }
-$siFoundPath = $SI_PATHS | Where-Object { Test-Path $_ } | Select-Object -First 1
-$siReq    = if ($siFoundPath) { "[OK] System Informer" } else { "[X] System Informer (get from systeminformer.sourceforge.io)" }
-$pSetup.Controls.Add((New-Lbl "$adminReq   $winReq   $siReq" 20 336 900 24 $cTEXT $cBG $fMono))
-
-# =====================================================================
-# SCANNER PAGE  (HabibiModAnalyzer logic)
-# =====================================================================
-$scanTopBar = New-Object System.Windows.Forms.Panel
-$scanTopBar.Dock = "Top"; $scanTopBar.Height = 48; $scanTopBar.BackColor = $cBG2
-$pScan.Controls.Add($scanTopBar)
-$scanTopBar.Controls.Add((New-Lbl "MOD ANALYZER" 16 14 220 22 $cACCENT $cBG2 $fBold))
-$scanTopBar.Controls.Add((New-Lbl "Checks Modrinth + Megabase, then scans for cheat strings in unknown jars" 240 16 520 18 $cDIM $cBG2 $fTiny))
-
-$stopScanBtn = New-Btn "STOP" 940 10 100 28 $cRED $cWHITE
-$stopScanBtn.Enabled = $false
-$stopScanBtn.Add_Click({ $global:StopScan = $true })
-$scanTopBar.Controls.Add($stopScanBtn)
-
-$startScanBtn = New-Btn "> START SCAN" 820 10 116 28 $cGREEN $cBG
-$scanTopBar.Controls.Add($startScanBtn)
-
-$scanProg = New-Object System.Windows.Forms.ProgressBar
-$scanProg.Dock = "Top"; $scanProg.Height = 4
-$scanProg.Style = "Continuous"; $scanProg.ForeColor = $cACCENT
-$pScan.Controls.Add($scanProg)
-
-$scanSplit = New-Object System.Windows.Forms.SplitContainer
-$scanSplit.Dock = "Fill"; $scanSplit.SplitterDistance = 300; $scanSplit.BackColor = $cBORDER
-$scanSplit.Panel1.BackColor = $cBG2; $scanSplit.Panel2.BackColor = $cBG
-$pScan.Controls.Add($scanSplit)
-
-$scanSplit.Panel1.Controls.Add((New-Lbl "RESULTS" 10 8 200 18 $cDIM $cBG2 $fTiny))
-
-$cntPanel = New-Object System.Windows.Forms.Panel
-$cntPanel.Location = New-Object System.Drawing.Point(6,28)
-$cntPanel.Size = New-Object System.Drawing.Size(282,48)
-$cntPanel.BackColor = $cBG2
-$verLbl   = New-Lbl "0  OK"    0   0 94 48 $cGREEN  $cBG3 $fBold "MiddleCenter"
-$unkLbl   = New-Lbl "0  UNK"  95   0 94 48 $cORANGE $cBG3 $fBold "MiddleCenter"
-$cheatLbl = New-Lbl "0  CHEAT" 190 0 94 48 $cRED    $cBG3 $fBold "MiddleCenter"
-$cntPanel.Controls.AddRange(@($verLbl,$unkLbl,$cheatLbl))
-$scanSplit.Panel1.Controls.Add($cntPanel)
-
-$findBox = New-Object System.Windows.Forms.ListBox
-$findBox.Location = New-Object System.Drawing.Point(6,82)
-$findBox.Size = New-Object System.Drawing.Size(282,500)
-$findBox.BackColor = $cBG2; $findBox.ForeColor = $cTEXT
-$findBox.BorderStyle = "None"; $findBox.Font = $fMono
-$scanSplit.Panel1.Controls.Add($findBox)
-
-$scanSplit.Panel2.Controls.Add((New-Lbl "SCAN LOG" 10 8 200 18 $cDIM $cBG $fTiny))
-$scanLog = New-Tbox 6 28 0 0 $true; $scanLog.Dock = "Fill"; $scanLog.BackColor = $cBG
-$scanSplit.Panel2.Controls.Add($scanLog)
-
-$startScanBtn.Add_Click({
-    $global:McFolder  = $McEntry.Text.Trim()
-    $global:OutFolder = $OutEntry.Text.Trim()
-    if (-not $global:McFolder -or -not (Test-Path $global:McFolder)) {
-        Log $scanLog "[ERROR] Set a valid Minecraft mods folder in Setup."; return
+    if (-not $mc -or -not (Test-Path $mc)) {
+        Log $LiveLog "[ERROR] Invalid mods folder. Set it above."; return
     }
-    if (-not $global:OutFolder -or -not (Test-Path $global:OutFolder)) {
-        Log $scanLog "[ERROR] Set a valid output folder in Setup."; return
+    if (-not $out -or -not (Test-Path $out)) {
+        Log $LiveLog "[ERROR] Invalid output folder. Set it above."; return
     }
-    $global:StopScan = $false
-    $findBox.Items.Clear(); $scanLog.Clear(); $scanProg.Value = 0
-    $verLbl.Text = "0  OK"; $unkLbl.Text = "0  UNK"; $cheatLbl.Text = "0  CHEAT"
-    $startScanBtn.Enabled = $false; $stopScanBtn.Enabled = $true
-    Set-Status "Mod analyzer running..."
+
+    $global:StopAll = $false
+    $modBox.Items.Clear(); $memBox.Items.Clear()
+    $sysBox.Items.Clear(); $siBox.Items.Clear()
+    $LiveLog.Clear(); $ProgBar.Value = 0
+    $okLbl.Text = "OK: --"; $unkLbl.Text = "UNK: --"
+    $cheatLbl.Text = "CHEAT: --"; $memLbl.Text = "MEM: --"; $siLbl.Text = "SI: --"
+
+    $StartBtn.Enabled = $false; $StopBtn.Enabled = $true
+    Set-Status "Running all scans..."
 
     $t = [System.Threading.Thread]::new({
-        $mc  = $global:McFolder
-        $out = $global:OutFolder
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
-        Log $scanLog "Mod Analyzer started  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-        Log $scanLog "Folder: $mc"
-        Log $scanLog ""
+        Log $LiveLog "============================================"
+        Log $LiveLog "  SS TOOL  --  FULL SCAN"
+        Log $LiveLog "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        Log $LiveLog "  $env:COMPUTERNAME / $env:USERNAME"
+        Log $LiveLog "============================================"
+        Log $LiveLog ""
+
+        # ------------------------------------------------------------------
+        # SECTION 1: MOD ANALYZER
+        # ------------------------------------------------------------------
+        Log $LiveLog "--- MOD ANALYZER ---"
+        Set-Status "Running mod analyzer..."
+        Set-Prog 5
 
         $jarFiles = Get-ChildItem -Path $mc -Filter "*.jar" -ErrorAction SilentlyContinue
         $total = $jarFiles.Count
+        $verOK = 0; $verUNK = 0; $verCHEAT = 0
+        $reportMods = @()
+
         if ($total -eq 0) {
-            Log $scanLog "[WARN] No .jar files found in that folder."
-            $startScanBtn.Invoke([Action]{ $startScanBtn.Enabled = $true })
-            $stopScanBtn.Invoke([Action]{ $stopScanBtn.Enabled = $false })
-            Set-Status "No jars found"; return
-        }
-        Log $scanLog "Found $total jar file(s) to check"
-        Log $scanLog ""
+            Log $LiveLog "[WARN] No .jar files found in mods folder."
+            $modBox.Invoke([Action]{ $modBox.Items.Add("No jars found") | Out-Null })
+        } else {
+            Log $LiveLog "Found $total jar(s)"
+            $counter = 0
+            foreach ($file in $jarFiles) {
+                if ($global:StopAll) { Log $LiveLog "-- Stopped --"; break }
+                $counter++
+                $pct = [int](($counter / $total) * 28) + 5
+                Set-Prog $pct
+                Log $LiveLog "[$counter/$total] $($file.Name)"
 
-        $counter = 0
-        $verifiedMods = [System.Collections.ArrayList]::new()
-        $unknownMods  = [System.Collections.ArrayList]::new()
-        $cheatMods    = [System.Collections.ArrayList]::new()
+                $hash = Get-SHA1 $file.FullName
 
-        foreach ($file in $jarFiles) {
-            if ($global:StopScan) { Log $scanLog "-- Scan stopped by user --"; break }
-            $counter++
-            $pct = [int](($counter / $total) * 85) + 5
-            $scanProg.Invoke([Action]{ $scanProg.Value = $pct })
-            Log $scanLog "[$counter/$total] $($file.Name)"
-
-            $hash = Get-SHA1 $file.FullName
-
-            $mr = Fetch-Modrinth $hash
-            if ($mr.Slug) {
-                Log $scanLog "  [OK] Modrinth verified: $($mr.Name)"
-                $verifiedMods.Add([PSCustomObject]@{ ModName = $mr.Name; FileName = $file.Name }) | Out-Null
-                $findBox.Invoke([Action]{ $findBox.Items.Add("[OK] $($file.Name)") | Out-Null })
-                $v = [int]($verLbl.Text.Split(" ")[0]) + 1
-                $verLbl.Invoke([Action]{ $verLbl.Text = "$v  OK" })
-                continue
-            }
-
-            $mb = Fetch-Megabase $hash
-            if ($mb -and $mb.name) {
-                Log $scanLog "  [OK] Megabase verified: $($mb.name)"
-                $verifiedMods.Add([PSCustomObject]@{ ModName = $mb.name; FileName = $file.Name }) | Out-Null
-                $findBox.Invoke([Action]{ $findBox.Items.Add("[OK] $($file.Name)") | Out-Null })
-                $v = [int]($verLbl.Text.Split(" ")[0]) + 1
-                $verLbl.Invoke([Action]{ $verLbl.Text = "$v  OK" })
-                continue
-            }
-
-            Log $scanLog "  [?] Not in databases, scanning strings..."
-            $strings = Check-CheatStrings $file.FullName
-            if ($strings.Count -gt 0) {
-                $joined = ($strings -join ", ")
-                Log $scanLog "  [CHEAT] Hits: $joined"
-                $cheatMods.Add([PSCustomObject]@{ FileName = $file.Name; DepFile = ""; Strings = $joined }) | Out-Null
-                $findBox.Invoke([Action]{ $findBox.Items.Add("[CHEAT] $($file.Name)") | Out-Null })
-                $c = [int]($cheatLbl.Text.Split(" ")[0]) + 1
-                $cheatLbl.Invoke([Action]{ $cheatLbl.Text = "$c  CHEAT" })
-                continue
-            }
-
-            # Try nested jars in META-INF/jars
-            $tempExtract = $null
-            $foundInDep  = $false
-            try {
-                $tempExtract = Join-Path $env:TEMP ("habibi_" + [System.IO.Path]::GetRandomFileName())
-                New-Item -ItemType Directory -Path $tempExtract | Out-Null
-                [System.IO.Compression.ZipFile]::ExtractToDirectory($file.FullName, $tempExtract)
-                $depJarsPath = Join-Path $tempExtract "META-INF\jars"
-                if (Test-Path $depJarsPath) {
-                    foreach ($dep in (Get-ChildItem $depJarsPath -Filter "*.jar")) {
-                        $depStrings = Check-CheatStrings $dep.FullName
-                        if ($depStrings.Count -gt 0) {
-                            $joined = ($depStrings -join ", ")
-                            Log $scanLog "  [CHEAT] Dep jar $($dep.Name): $joined"
-                            $cheatMods.Add([PSCustomObject]@{ FileName = $file.Name; DepFile = $dep.Name; Strings = $joined }) | Out-Null
-                            $findBox.Invoke([Action]{ $findBox.Items.Add("[CHEAT] $($file.Name) > $($dep.Name)") | Out-Null })
-                            $c = [int]($cheatLbl.Text.Split(" ")[0]) + 1
-                            $cheatLbl.Invoke([Action]{ $cheatLbl.Text = "$c  CHEAT" })
-                            $foundInDep = $true
-                        }
-                    }
+                $mr = Fetch-Modrinth $hash
+                if ($mr.Slug) {
+                    Log $LiveLog "  [OK] $($mr.Name)"
+                    $modBox.Invoke([Action]{ $modBox.Items.Add("[OK] $($file.Name)") | Out-Null })
+                    $verOK++; $reportMods += "[OK]    $($mr.Name)  --  $($file.Name)"
+                    continue
                 }
-            } catch {}
-            finally {
-                if ($tempExtract -and (Test-Path $tempExtract)) {
-                    Remove-Item -Recurse -Force $tempExtract -ErrorAction SilentlyContinue
+
+                $mb = Fetch-Megabase $hash
+                if ($mb -and $mb.name) {
+                    Log $LiveLog "  [OK] $($mb.name)"
+                    $modBox.Invoke([Action]{ $modBox.Items.Add("[OK] $($file.Name)") | Out-Null })
+                    $verOK++; $reportMods += "[OK]    $($mb.name)  --  $($file.Name)"
+                    continue
                 }
-            }
 
-            if (-not $foundInDep) {
-                $zone = Get-ZoneId $file.FullName
-                $unknownMods.Add([PSCustomObject]@{ FileName = $file.Name; ZoneId = $zone }) | Out-Null
-                $findBox.Invoke([Action]{ $findBox.Items.Add("[UNK] $($file.Name)") | Out-Null })
-                $u = [int]($unkLbl.Text.Split(" ")[0]) + 1
-                $unkLbl.Invoke([Action]{ $unkLbl.Text = "$u  UNK" })
-                if ($zone) { Log $scanLog "  [UNK] Source: $zone" }
-                else { Log $scanLog "  [UNK] No database match, no cheat strings" }
-            }
-        }
+                $strings = Check-CheatStrings $file.FullName
+                if ($strings.Count -gt 0) {
+                    $joined = ($strings -join ", ")
+                    Log $LiveLog "  [CHEAT] $joined"
+                    $modBox.Invoke([Action]{ $modBox.Items.Add("[CHEAT] $($file.Name)") | Out-Null })
+                    $verCHEAT++; $reportMods += "[CHEAT] $($file.Name)  --  $joined"
+                    continue
+                }
 
-        # Write report
-        $scanProg.Invoke([Action]{ $scanProg.Value = 95 })
-        Log $scanLog ""
-        Log $scanLog "Writing report..."
-        $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
-        $lines = @(
-            "="*60,
-            "  MOD ANALYZER REPORT",
-            "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
-            "  $env:COMPUTERNAME / $env:USERNAME",
-            "  Folder: $mc",
-            "="*60,
-            "",
-            "  Total: $total   Verified: $($verifiedMods.Count)   Unknown: $($unknownMods.Count)   Cheat: $($cheatMods.Count)",
-            ""
-        )
-        if ($verifiedMods.Count -gt 0) {
-            $lines += "--- VERIFIED MODS ---"
-            foreach ($m in $verifiedMods) { $lines += "  [OK]    $($m.ModName)  --  $($m.FileName)" }
-            $lines += ""
-        }
-        if ($unknownMods.Count -gt 0) {
-            $lines += "--- UNKNOWN MODS ---"
-            foreach ($m in $unknownMods) {
-                if ($m.ZoneId) { $lines += "  [UNK]   $($m.FileName)  --  from: $($m.ZoneId)" }
-                else { $lines += "  [UNK]   $($m.FileName)" }
-            }
-            $lines += ""
-        }
-        if ($cheatMods.Count -gt 0) {
-            $lines += "--- CHEAT MODS ---"
-            foreach ($m in $cheatMods) {
-                if ($m.DepFile) { $lines += "  [CHEAT] $($m.FileName) > $($m.DepFile)  --  $($m.Strings)" }
-                else { $lines += "  [CHEAT] $($m.FileName)  --  $($m.Strings)" }
-            }
-            $lines += ""
-        }
-        $lines | Out-File "$out\modscan_$stamp.txt" -Encoding UTF8
-        Log $scanLog "Report saved: $out\modscan_$stamp.txt"
-        $scanProg.Invoke([Action]{ $scanProg.Value = 100 })
-        Set-Status "Done -- OK: $($verifiedMods.Count)  UNK: $($unknownMods.Count)  CHEAT: $($cheatMods.Count)"
-        Log $scanLog ""
-        Log $scanLog "Scan complete."
-        $startScanBtn.Invoke([Action]{ $startScanBtn.Enabled = $true })
-        $stopScanBtn.Invoke([Action]{ $stopScanBtn.Enabled = $false })
-    })
-    $t.IsBackground = $true; $t.Start()
-})
-
-# =====================================================================
-# MEMORY PAGE
-# =====================================================================
-$memTopBar = New-Object System.Windows.Forms.Panel
-$memTopBar.Dock = "Top"; $memTopBar.Height = 48; $memTopBar.BackColor = $cBG2
-$pMemory.Controls.Add($memTopBar)
-$memTopBar.Controls.Add((New-Lbl "MEMORY SCANNER" 16 14 300 22 $cACCENT $cBG2 $fBold))
-$memTopBar.Controls.Add((New-Lbl "Scans javaw.exe RAM for cheat signatures" 240 16 400 18 $cDIM $cBG2 $fTiny))
-
-$stopMemBtn = New-Btn "STOP" 940 10 100 28 $cRED $cWHITE
-$stopMemBtn.Enabled = $false
-$stopMemBtn.Add_Click({ $global:StopMem = $true })
-$memTopBar.Controls.Add($stopMemBtn)
-
-$startMemBtn = New-Btn "> SCAN MEMORY" 800 10 136 28 $cACCENT $cBG
-$memTopBar.Controls.Add($startMemBtn)
-
-$memLog = New-Tbox 8 56 0 0 $true; $memLog.Dock = "Fill"; $memLog.BackColor = $cBG
-$pMemory.Controls.Add($memLog)
-
-$startMemBtn.Add_Click({
-    $memLog.Clear(); $global:StopMem = $false
-    $startMemBtn.Enabled = $false; $stopMemBtn.Enabled = $true
-    Set-Status "Memory scan running..."
-    $t = [System.Threading.Thread]::new({
-        Log $memLog "Memory scan started  $(Get-Date -Format 'HH:mm:ss')"
-        Log $memLog ""
-        $javaws = Get-Process -Name "javaw" -ErrorAction SilentlyContinue
-        if (-not $javaws) { $javaws = Get-Process -Name "java" -ErrorAction SilentlyContinue }
-        if (-not $javaws) {
-            Log $memLog "[WARN] No javaw/java process found. Is Minecraft running?"
-            $startMemBtn.Invoke([Action]{ $startMemBtn.Enabled = $true })
-            $stopMemBtn.Invoke([Action]{ $stopMemBtn.Enabled = $false })
-            Set-Status "No Minecraft found"; return
-        }
-        Add-Type @"
-using System; using System.Runtime.InteropServices;
-public class MemReader {
-    [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint a,bool b,int c);
-    [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h,IntPtr a,byte[] b,int s,out int r);
-    [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
-    [DllImport("kernel32.dll")] public static extern int VirtualQueryEx(IntPtr h,IntPtr a,out MBI m,uint s);
-    [StructLayout(LayoutKind.Sequential)] public struct MBI {
-        public IntPtr Base,AllocBase; public uint AllocProtect;
-        public IntPtr RegionSize; public uint State,Protect,Type;
-    }
-}
-"@ -ErrorAction SilentlyContinue
-        $totalHits = 0
-        foreach ($proc in $javaws) {
-            if ($global:StopMem) { break }
-            Log $memLog "Scanning PID $($proc.Id)..."
-            $handle = [MemReader]::OpenProcess(0x0410,$false,$proc.Id)
-            if ($handle -eq [IntPtr]::Zero) {
-                Log $memLog "[WARN] Cannot open PID $($proc.Id) - need admin"
-                continue
-            }
-            $addr = [IntPtr]::Zero; $hits = @{}; $scanned = 0
-            while ($scanned -lt 512MB -and -not $global:StopMem) {
-                $mbi = New-Object MemReader+MBI
-                $ret = [MemReader]::VirtualQueryEx($handle,$addr,[ref]$mbi,[System.Runtime.InteropServices.Marshal]::SizeOf($mbi))
-                if ($ret -eq 0) { break }
-                $size = $mbi.RegionSize.ToInt64()
-                if ($size -le 0) { break }
-                $readable = ($mbi.Protect -eq 0x02 -or $mbi.Protect -eq 0x04 -or $mbi.Protect -eq 0x20 -or $mbi.Protect -eq 0x40)
-                if ($mbi.State -eq 0x1000 -and $readable) {
-                    $buf = New-Object byte[] ([Math]::Min($size,4MB)); $read = 0
-                    if ([MemReader]::ReadProcessMemory($handle,$mbi.Base,$buf,$buf.Length,[ref]$read) -and $read -gt 0) {
-                        $str = [System.Text.Encoding]::UTF8.GetString($buf,0,$read)
-                        foreach ($sig in $MEM_SIGS) {
-                            if (-not $hits[$sig] -and $str.Contains($sig)) {
-                                $hits[$sig] = $true
-                                Log $memLog "[CRIT] HIT: $sig"
-                                $totalHits++
+                $tempEx = $null; $foundInDep = $false
+                try {
+                    $tempEx = Join-Path $env:TEMP ("hab_" + [System.IO.Path]::GetRandomFileName())
+                    New-Item -ItemType Directory -Path $tempEx | Out-Null
+                    [System.IO.Compression.ZipFile]::ExtractToDirectory($file.FullName,$tempEx)
+                    $depPath = Join-Path $tempEx "META-INF\jars"
+                    if (Test-Path $depPath) {
+                        foreach ($dep in (Get-ChildItem $depPath -Filter "*.jar")) {
+                            $ds = Check-CheatStrings $dep.FullName
+                            if ($ds.Count -gt 0) {
+                                $joined = ($ds -join ", ")
+                                Log $LiveLog "  [CHEAT] dep $($dep.Name): $joined"
+                                $modBox.Invoke([Action]{ $modBox.Items.Add("[CHEAT] $($file.Name) > $($dep.Name)") | Out-Null })
+                                $verCHEAT++; $reportMods += "[CHEAT] $($file.Name) > $($dep.Name)  --  $joined"
+                                $foundInDep = $true
                             }
                         }
                     }
-                    $scanned += $read
+                } catch {} finally {
+                    if ($tempEx -and (Test-Path $tempEx)) { Remove-Item -Recurse -Force $tempEx -ErrorAction SilentlyContinue }
                 }
-                $next = $mbi.Base.ToInt64() + $size
-                if ($next -ge 0x7FFFFFFFFFFF) { break }
-                $addr = [IntPtr]::new($next)
+
+                if (-not $foundInDep) {
+                    $zone = Get-ZoneId $file.FullName
+                    $zoneStr = if ($zone) { "from: $zone" } else { "no source" }
+                    Log $LiveLog "  [UNK] $zoneStr"
+                    $modBox.Invoke([Action]{ $modBox.Items.Add("[UNK] $($file.Name)") | Out-Null })
+                    $verUNK++; $reportMods += "[UNK]   $($file.Name)  --  $zoneStr"
+                }
             }
-            [MemReader]::CloseHandle($handle) | Out-Null
-            if ($hits.Count -eq 0) { Log $memLog "  Clean: PID $($proc.Id)" }
-            else { Log $memLog "  ! PID $($proc.Id) - $($hits.Count) signature(s)" }
         }
-        Log $memLog ""; Log $memLog "Done -- $totalHits total hit(s)"
-        Set-Status "Memory scan done -- $totalHits hit(s)"
-        $startMemBtn.Invoke([Action]{ $startMemBtn.Enabled = $true })
-        $stopMemBtn.Invoke([Action]{ $stopMemBtn.Enabled = $false })
-    })
-    $t.IsBackground = $true; $t.Start()
-})
 
-# =====================================================================
-# SYS INFO PAGE
-# =====================================================================
-$sysTopBar = New-Object System.Windows.Forms.Panel
-$sysTopBar.Dock = "Top"; $sysTopBar.Height = 48; $sysTopBar.BackColor = $cBG2
-$pSysInfo.Controls.Add($sysTopBar)
-$sysTopBar.Controls.Add((New-Lbl "SYSTEM INFO" 16 14 300 22 $cACCENT $cBG2 $fBold))
+        $ok_=$verOK; $unk_=$verUNK; $cheat_=$verCHEAT
+        $okLbl.Invoke([Action]{ $okLbl.Text = "OK: $ok_" })
+        $unkLbl.Invoke([Action]{ $unkLbl.Text = "UNK: $unk_" })
+        $cheatLbl.Invoke([Action]{ $cheatLbl.Text = "CHEAT: $cheat_" })
+        Log $LiveLog "Mod scan done -- OK: $verOK  UNK: $verUNK  CHEAT: $verCHEAT"
+        Log $LiveLog ""
+        Set-Prog 35
 
-$stopSysBtn = New-Btn "STOP" 940 10 100 28 $cRED $cWHITE
-$stopSysBtn.Enabled = $false
-$sysTopBar.Controls.Add($stopSysBtn)
+        # ------------------------------------------------------------------
+        # SECTION 2: MEMORY SCAN
+        # ------------------------------------------------------------------
+        if (-not $global:StopAll) {
+            Log $LiveLog "--- MEMORY SCAN ---"
+            Set-Status "Scanning memory..."
 
-$runSysBtn = New-Btn "> RUN CHECKS" 820 10 116 28 $cORANGE $cBG
-$sysTopBar.Controls.Add($runSysBtn)
-
-$uptimePanel = New-Object System.Windows.Forms.Panel
-$uptimePanel.Location = New-Object System.Drawing.Point(8,56)
-$uptimePanel.Size = New-Object System.Drawing.Size(600,56)
-$uptimePanel.BackColor = $cBG3
-$pSysInfo.Controls.Add($uptimePanel)
-$uptimePanel.Controls.Add((New-Lbl "MC UPTIME" 12 6 200 16 $cDIM $cBG3 $fTiny))
-$uptimeVal = New-Lbl "---" 12 24 580 24 $cTEXT $cBG3 $fBold
-$uptimePanel.Controls.Add($uptimeVal)
-
-$hwidPanel = New-Object System.Windows.Forms.Panel
-$hwidPanel.Location = New-Object System.Drawing.Point(8,120)
-$hwidPanel.Size = New-Object System.Drawing.Size(1050,56)
-$hwidPanel.BackColor = $cBG3
-$pSysInfo.Controls.Add($hwidPanel)
-$hwidPanel.Controls.Add((New-Lbl "HWID" 12 6 200 16 $cDIM $cBG3 $fTiny))
-$hwidVal = New-Lbl "---" 12 24 1020 24 $cACCENT $cBG3 $fMono
-$hwidPanel.Controls.Add($hwidVal)
-
-$sysLog = New-Tbox 8 184 1066 400 $true
-$sysLog.Anchor = "Top,Bottom,Left,Right"
-$pSysInfo.Controls.Add($sysLog)
-
-$runSysBtn.Add_Click({
-    $sysLog.Clear()
-    $uptimeVal.Text = "Checking..."
-    $hwidVal.Text   = "Generating..."
-    $runSysBtn.Enabled = $false; $stopSysBtn.Enabled = $true
-    Set-Status "Running sys info checks..."
-    $t = [System.Threading.Thread]::new({
-        Log $sysLog "Checks started  $(Get-Date -Format 'HH:mm:ss')"
-        Log $sysLog "Host: $env:COMPUTERNAME   User: $env:USERNAME"
-        Log $sysLog ""
-        Log $sysLog "--- MC Uptime ---"
-        $jw = Get-Process -Name "javaw" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $jw) { $jw = Get-Process -Name "java" -ErrorAction SilentlyContinue | Select-Object -First 1 }
-        if ($jw) {
-            $el = (Get-Date) - $jw.StartTime
-            $startedAt = $jw.StartTime.ToString("HH:mm:ss")
-            $pid_ = $jw.Id; $pname = $jw.Name
-            $ups = "$($el.Hours)h $($el.Minutes)m $($el.Seconds)s"
-            $uptimeVal.Invoke([Action]{ $uptimeVal.Text = "$pname PID $pid_  --  $ups  (started $startedAt)" })
-            Log $sysLog "[OK] $pname PID $pid_ running for $ups (since $startedAt)"
-        } else {
-            $uptimeVal.Invoke([Action]{ $uptimeVal.Text = "Minecraft not running" })
-            Log $sysLog "No javaw/java process found."
-        }
-        Log $sysLog ""
-        Log $sysLog "--- HWID ---"
-        try {
-            $mb   = (Get-WmiObject win32_baseboard).Manufacturer + " " + (Get-WmiObject win32_baseboard).SerialNumber
-            $cpu  = (Get-WmiObject Win32_Processor | Select-Object -First 1).Name
-            $disk = (Get-PhysicalDisk | Select-Object -First 1).SerialNumber
-            $raw  = "$mb|$cpu|$disk"
-            $hwid = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($raw)).Replace("=","")
-            $hwidVal.Invoke([Action]{ $hwidVal.Text = $hwid })
-            Log $sysLog "[OK] HWID generated:"
-            Log $sysLog $hwid
-        } catch {
-            $err = $_.ToString()
-            $hwidVal.Invoke([Action]{ $hwidVal.Text = "Error: $err" })
-            Log $sysLog "HWID failed: $err"
-        }
-        Log $sysLog ""; Log $sysLog "All checks complete."
-        Set-Status "Sys info checks complete"
-        $runSysBtn.Invoke([Action]{ $runSysBtn.Enabled = $true })
-        $stopSysBtn.Invoke([Action]{ $stopSysBtn.Enabled = $false })
-    })
-    $t.IsBackground = $true; $t.Start()
-})
-
-# =====================================================================
-# SYSTEM INFORMER PAGE
-# =====================================================================
-$siTopBar = New-Object System.Windows.Forms.Panel
-$siTopBar.Dock = "Top"; $siTopBar.Height = 48; $siTopBar.BackColor = $cBG2
-$pSI.Controls.Add($siTopBar)
-$siTopBar.Controls.Add((New-Lbl "SYSTEM INFORMER DEEP SCAN" 16 14 360 22 $cACCENT $cBG2 $fBold))
-$siTopBar.Controls.Add((New-Lbl "Scans javaw private memory for cheat keywords (case insensitive)" 380 16 500 18 $cDIM $cBG2 $fTiny))
-
-$stopSIBtn = New-Btn "STOP" 940 10 100 28 $cRED $cWHITE
-$stopSIBtn.Enabled = $false
-$stopSIBtn.Add_Click({ $global:StopSI = $true })
-$siTopBar.Controls.Add($stopSIBtn)
-
-$startSIBtn = New-Btn "> RUN SI SCAN" 810 10 126 28 $cRED $cWHITE
-$siTopBar.Controls.Add($startSIBtn)
-
-$siInfoPanel = New-Object System.Windows.Forms.Panel
-$siInfoPanel.Dock = "Top"; $siInfoPanel.Height = 56; $siInfoPanel.BackColor = $cBG3
-$pSI.Controls.Add($siInfoPanel)
-$siStatusVal  = New-Lbl "Idle -- press Run SI Scan to start" 16 8 700 18 $cDIM $cBG3 $fMono
-$siKeywordVal = New-Lbl "Keywords: $($SI_KEYWORDS.Count) loaded" 16 30 700 18 $cDIM $cBG3 $fTiny
-$siInfoPanel.Controls.AddRange(@($siStatusVal,$siKeywordVal))
-
-$siSplit = New-Object System.Windows.Forms.SplitContainer
-$siSplit.Dock = "Fill"; $siSplit.SplitterDistance = 320; $siSplit.BackColor = $cBORDER
-$siSplit.Panel1.BackColor = $cBG2; $siSplit.Panel2.BackColor = $cBG
-$pSI.Controls.Add($siSplit)
-
-$siSplit.Panel1.Controls.Add((New-Lbl "HITS" 10 8 200 18 $cDIM $cBG2 $fTiny))
-$siHitBox = New-Object System.Windows.Forms.ListBox
-$siHitBox.Location = New-Object System.Drawing.Point(6,30)
-$siHitBox.Size = New-Object System.Drawing.Size(302,530)
-$siHitBox.BackColor = $cBG2; $siHitBox.ForeColor = $cRED
-$siHitBox.BorderStyle = "None"; $siHitBox.Font = $fMono
-$siSplit.Panel1.Controls.Add($siHitBox)
-
-$siSplit.Panel2.Controls.Add((New-Lbl "SI SCAN LOG" 10 8 200 18 $cDIM $cBG $fTiny))
-$siLog = New-Tbox 6 28 0 0 $true; $siLog.Dock = "Fill"; $siLog.BackColor = $cBG
-$siSplit.Panel2.Controls.Add($siLog)
-
-$startSIBtn.Add_Click({
-    $global:OutFolder = $OutEntry.Text.Trim()
-    if (-not $global:OutFolder -or -not (Test-Path $global:OutFolder)) {
-        Log $siLog "[ERROR] Set a valid output folder in Setup first."; return
-    }
-    $siLog.Clear(); $siHitBox.Items.Clear(); $global:StopSI = $false
-    $startSIBtn.Enabled = $false; $stopSIBtn.Enabled = $true
-    $siStatusVal.Text = "Starting..."
-    Set-Status "System Informer scan running..."
-
-    $t = [System.Threading.Thread]::new({
-        $out = $global:OutFolder
-        Log $siLog "SI Deep Scan started  $(Get-Date -Format 'HH:mm:ss')"
-        Log $siLog ""
-
-        $siExe = $SI_PATHS | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if (-not $siExe) {
-            Log $siLog "[ERROR] System Informer not found."
-            Log $siLog "Download from: https://systeminformer.sourceforge.io"
-            $siStatusVal.Invoke([Action]{ $siStatusVal.Text = "System Informer not found" })
-            $startSIBtn.Invoke([Action]{ $startSIBtn.Enabled = $true })
-            $stopSIBtn.Invoke([Action]{ $stopSIBtn.Enabled = $false })
-            Set-Status "SI not found"; return
-        }
-        Log $siLog "[OK] Found: $siExe"
-
-        $siProc = Get-Process -Name "SystemInformer","ProcessHacker" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $siProc) {
-            Log $siLog "Launching System Informer..."
-            Start-Process $siExe
-            Start-Sleep -Seconds 3
-            $siProc = Get-Process -Name "SystemInformer","ProcessHacker" -ErrorAction SilentlyContinue | Select-Object -First 1
-        }
-        if (-not $siProc) {
-            Log $siLog "[ERROR] Could not launch System Informer."
-            $startSIBtn.Invoke([Action]{ $startSIBtn.Enabled = $true })
-            $stopSIBtn.Invoke([Action]{ $stopSIBtn.Enabled = $false }); return
-        }
-        Log $siLog "[OK] System Informer running PID $($siProc.Id)"
-
-        $javaw = Get-Process -Name "javaw" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $javaw) {
-            Log $siLog "[WARN] No javaw.exe found - is Minecraft running?"
-            $siStatusVal.Invoke([Action]{ $siStatusVal.Text = "No javaw.exe found" })
-            $startSIBtn.Invoke([Action]{ $startSIBtn.Enabled = $true })
-            $stopSIBtn.Invoke([Action]{ $stopSIBtn.Enabled = $false })
-            Set-Status "No Minecraft found"; return
-        }
-        Log $siLog "[OK] javaw.exe PID $($javaw.Id)"
-        $siStatusVal.Invoke([Action]{ $siStatusVal.Text = "Scanning $($SI_KEYWORDS.Count) keywords in PID $($javaw.Id)..." })
-
-        Add-Type @"
+            Add-Type @"
 using System; using System.Runtime.InteropServices;
-public class SIMemSearch {
+public class MemReader2 {
     [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint a,bool b,int c);
     [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h,IntPtr a,byte[] b,int s,out int r);
     [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
-    [DllImport("kernel32.dll")] public static extern int VirtualQueryEx(IntPtr h,IntPtr a,out MBI2 m,uint s);
-    [StructLayout(LayoutKind.Sequential)] public struct MBI2 {
+    [DllImport("kernel32.dll")] public static extern int VirtualQueryEx(IntPtr h,IntPtr a,out MBI3 m,uint s);
+    [StructLayout(LayoutKind.Sequential)] public struct MBI3 {
         public IntPtr Base,AllocBase; public uint AllocProtect;
         public IntPtr RegionSize; public uint State,Protect,Type;
     }
 }
 "@ -ErrorAction SilentlyContinue
 
-        $handle = [SIMemSearch]::OpenProcess(0x0410,$false,$javaw.Id)
-        if ($handle -eq [IntPtr]::Zero) {
-            Log $siLog "[ERROR] Cannot open javaw.exe - ensure running as admin"
-            $startSIBtn.Invoke([Action]{ $startSIBtn.Enabled = $true })
-            $stopSIBtn.Invoke([Action]{ $stopSIBtn.Enabled = $false }); return
-        }
+            $javaws = Get-Process -Name "javaw" -ErrorAction SilentlyContinue
+            if (-not $javaws) { $javaws = Get-Process -Name "java" -ErrorAction SilentlyContinue }
 
-        $allHits = @{}
-        $addr = [IntPtr]::Zero; $scanned = 0
-        Log $siLog "Scanning private memory regions (case insensitive)..."
-        Log $siLog ""
-
-        while ($scanned -lt 1GB -and -not $global:StopSI) {
-            $mbi = New-Object SIMemSearch+MBI2
-            $ret = [SIMemSearch]::VirtualQueryEx($handle,$addr,[ref]$mbi,[System.Runtime.InteropServices.Marshal]::SizeOf($mbi))
-            if ($ret -eq 0) { break }
-            $size = $mbi.RegionSize.ToInt64()
-            if ($size -le 0) { break }
-            $isPrivate = $mbi.Type  -eq 0x20000
-            $isCommit  = $mbi.State -eq 0x1000
-            $readable  = ($mbi.Protect -eq 0x02 -or $mbi.Protect -eq 0x04 -or $mbi.Protect -eq 0x20 -or $mbi.Protect -eq 0x40)
-            if ($isPrivate -and $isCommit -and $readable) {
-                $buf = New-Object byte[] ([Math]::Min($size,8MB)); $read = 0
-                if ([SIMemSearch]::ReadProcessMemory($handle,$mbi.Base,$buf,$buf.Length,[ref]$read) -and $read -gt 0) {
-                    $str = [System.Text.Encoding]::UTF8.GetString($buf,0,$read)
-                    foreach ($kw in $SI_KEYWORDS) {
-                        if ($str.IndexOf($kw,[System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-                            if (-not $allHits[$kw]) { $allHits[$kw] = 0 }
-                            $allHits[$kw]++
+            $totalMemHits = 0
+            if (-not $javaws) {
+                Log $LiveLog "[WARN] Minecraft not running - skipping memory scan"
+                $memBox.Invoke([Action]{ $memBox.Items.Add("Minecraft not running") | Out-Null })
+                $memLbl.Invoke([Action]{ $memLbl.Text = "MEM: N/A" })
+            } else {
+                foreach ($proc in $javaws) {
+                    if ($global:StopAll) { break }
+                    Log $LiveLog "Scanning PID $($proc.Id)..."
+                    $handle = [MemReader2]::OpenProcess(0x0410,$false,$proc.Id)
+                    if ($handle -eq [IntPtr]::Zero) {
+                        Log $LiveLog "[WARN] Cannot open PID $($proc.Id)"
+                        continue
+                    }
+                    $addr = [IntPtr]::Zero; $hits = @{}; $scanned = 0
+                    while ($scanned -lt 512MB -and -not $global:StopAll) {
+                        $mbi = New-Object MemReader2+MBI3
+                        $ret = [MemReader2]::VirtualQueryEx($handle,$addr,[ref]$mbi,[System.Runtime.InteropServices.Marshal]::SizeOf($mbi))
+                        if ($ret -eq 0) { break }
+                        $size = $mbi.RegionSize.ToInt64()
+                        if ($size -le 0) { break }
+                        $readable = ($mbi.Protect -eq 0x02 -or $mbi.Protect -eq 0x04 -or $mbi.Protect -eq 0x20 -or $mbi.Protect -eq 0x40)
+                        if ($mbi.State -eq 0x1000 -and $readable) {
+                            $buf = New-Object byte[] ([Math]::Min($size,4MB)); $read = 0
+                            if ([MemReader2]::ReadProcessMemory($handle,$mbi.Base,$buf,$buf.Length,[ref]$read) -and $read -gt 0) {
+                                $str = [System.Text.Encoding]::UTF8.GetString($buf,0,$read)
+                                foreach ($sig in $MEM_SIGS) {
+                                    if (-not $hits[$sig] -and $str.Contains($sig)) {
+                                        $hits[$sig] = $true
+                                        Log $LiveLog "  [HIT] $sig"
+                                        $memBox.Invoke([Action]{ $memBox.Items.Add("[HIT] $sig") | Out-Null })
+                                        $totalMemHits++
+                                    }
+                                }
+                            }
+                            $scanned += $read
                         }
+                        $next = $mbi.Base.ToInt64() + $size
+                        if ($next -ge 0x7FFFFFFFFFFF) { break }
+                        $addr = [IntPtr]::new($next)
+                    }
+                    [MemReader2]::CloseHandle($handle) | Out-Null
+                    if ($hits.Count -eq 0) {
+                        Log $LiveLog "  [OK] PID $($proc.Id) clean"
+                        $memBox.Invoke([Action]{ $memBox.Items.Add("[OK] PID $($proc.Id) clean") | Out-Null })
                     }
                 }
-                $scanned += $read
+                $mh = $totalMemHits
+                $memLbl.Invoke([Action]{ $memLbl.Text = "MEM: $mh hit(s)" })
             }
-            $next = $mbi.Base.ToInt64() + $size
-            if ($next -ge 0x7FFFFFFFFFFF) { break }
-            $addr = [IntPtr]::new($next)
+            Log $LiveLog "Memory scan done -- $totalMemHits hit(s)"
+            Log $LiveLog ""
+            Set-Prog 60
         }
-        [SIMemSearch]::CloseHandle($handle) | Out-Null
 
-        Log $siLog "Scan complete - writing results..."
-        Log $siLog ""
+        # ------------------------------------------------------------------
+        # SECTION 3: SYS INFO
+        # ------------------------------------------------------------------
+        if (-not $global:StopAll) {
+            Log $LiveLog "--- SYS INFO ---"
+            Set-Status "Gathering sys info..."
 
-        $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
-        $reportLines = @(
-            "="*60,
-            "  SS TOOL - SYSTEM INFORMER DEEP SCAN",
-            "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
-            "  javaw.exe PID $($javaw.Id)",
-            "="*60,""
-        )
-        $hitCount = 0
-        foreach ($kw in $SI_KEYWORDS) {
-            if ($allHits[$kw] -and $allHits[$kw] -gt 0) {
-                $cnt = $allHits[$kw]
-                Log $siLog "[CRIT] HIT: '$kw' -- $cnt region(s)"
-                $siHitBox.Invoke([Action]{ $siHitBox.Items.Add("[CRIT] $kw  ($cnt regions)") | Out-Null })
-                $reportLines += "  [HIT]  $kw  --  $cnt memory region(s)"
-                $hitCount++
+            $jw = Get-Process -Name "javaw" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $jw) { $jw = Get-Process -Name "java" -ErrorAction SilentlyContinue | Select-Object -First 1 }
+            if ($jw) {
+                $el = (Get-Date) - $jw.StartTime
+                $ups = "$($el.Hours)h $($el.Minutes)m $($el.Seconds)s"
+                $startedAt = $jw.StartTime.ToString("HH:mm:ss")
+                Log $LiveLog "  MC Uptime: $ups (since $startedAt) PID $($jw.Id)"
+                $sysBox.Invoke([Action]{ $sysBox.Items.Add("Uptime: $ups since $startedAt") | Out-Null })
             } else {
-                Log $siLog "  [OK] $kw"
-                $reportLines += "  [OK]   $kw"
+                Log $LiveLog "  MC not running"
+                $sysBox.Invoke([Action]{ $sysBox.Items.Add("Minecraft not running") | Out-Null })
             }
+
+            try {
+                $mb2  = (Get-WmiObject win32_baseboard).Manufacturer + " " + (Get-WmiObject win32_baseboard).SerialNumber
+                $cpu2 = (Get-WmiObject Win32_Processor | Select-Object -First 1).Name
+                $dsk  = (Get-PhysicalDisk | Select-Object -First 1).SerialNumber
+                $raw  = "$mb2|$cpu2|$dsk"
+                $hwid = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($raw)).Replace("=","")
+                Log $LiveLog "  HWID: $hwid"
+                $sysBox.Invoke([Action]{ $sysBox.Items.Add("HWID: $($hwid.Substring(0,[Math]::Min(40,$hwid.Length)))...") | Out-Null })
+            } catch {
+                Log $LiveLog "  HWID failed: $_"
+                $sysBox.Invoke([Action]{ $sysBox.Items.Add("HWID: error") | Out-Null })
+            }
+
+            Log $LiveLog "Sys info done"
+            Log $LiveLog ""
+            Set-Prog 75
         }
-        $reportLines += @("","="*60,"  Total keywords hit: $hitCount / $($SI_KEYWORDS.Count)","="*60)
-        $reportLines | Out-File "$out\si_scan_$stamp.txt" -Encoding UTF8
-        Log $siLog ""
-        Log $siLog "Report saved: $out\si_scan_$stamp.txt"
-        Log $siLog ""
-        Log $siLog "SI scan complete -- $hitCount keyword(s) hit out of $($SI_KEYWORDS.Count)"
-        $siStatusVal.Invoke([Action]{ $siStatusVal.Text = "Done -- $hitCount hit(s) out of $($SI_KEYWORDS.Count) keywords" })
-        Set-Status "SI scan done -- $hitCount hit(s)"
-        $startSIBtn.Invoke([Action]{ $startSIBtn.Enabled = $true })
-        $stopSIBtn.Invoke([Action]{ $stopSIBtn.Enabled = $false })
+
+        # ------------------------------------------------------------------
+        # SECTION 4: SI DEEP SCAN
+        # ------------------------------------------------------------------
+        if (-not $global:StopAll) {
+            Log $LiveLog "--- SI DEEP SCAN ---"
+            Set-Status "Running SI deep scan..."
+
+            $siExe = $SI_PATHS | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if (-not $siExe) {
+                Log $LiveLog "[WARN] System Informer not installed - skipping"
+                Log $LiveLog "       Get it from systeminformer.sourceforge.io"
+                $siBox.Invoke([Action]{ $siBox.Items.Add("System Informer not found") | Out-Null })
+                $siLbl.Invoke([Action]{ $siLbl.Text = "SI: N/A" })
+            } else {
+                $siProc = Get-Process -Name "SystemInformer","ProcessHacker" -ErrorAction SilentlyContinue | Select-Object -First 1
+                if (-not $siProc) { Start-Process $siExe; Start-Sleep 3 }
+                $siProc = Get-Process -Name "SystemInformer","ProcessHacker" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+                $javaw2 = Get-Process -Name "javaw" -ErrorAction SilentlyContinue | Select-Object -First 1
+                if (-not $javaw2) {
+                    Log $LiveLog "[WARN] Minecraft not running - skipping SI scan"
+                    $siBox.Invoke([Action]{ $siBox.Items.Add("Minecraft not running") | Out-Null })
+                    $siLbl.Invoke([Action]{ $siLbl.Text = "SI: N/A" })
+                } else {
+                    Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class SIMem2 {
+    [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint a,bool b,int c);
+    [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h,IntPtr a,byte[] b,int s,out int r);
+    [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll")] public static extern int VirtualQueryEx(IntPtr h,IntPtr a,out MBI4 m,uint s);
+    [StructLayout(LayoutKind.Sequential)] public struct MBI4 {
+        public IntPtr Base,AllocBase; public uint AllocProtect;
+        public IntPtr RegionSize; public uint State,Protect,Type;
+    }
+}
+"@ -ErrorAction SilentlyContinue
+
+                    $handle2 = [SIMem2]::OpenProcess(0x0410,$false,$javaw2.Id)
+                    $allHits2 = @{}; $addr2 = [IntPtr]::Zero; $scanned2 = 0
+
+                    if ($handle2 -eq [IntPtr]::Zero) {
+                        Log $LiveLog "[ERROR] Cannot open javaw - need admin"
+                    } else {
+                        while ($scanned2 -lt 1GB -and -not $global:StopAll) {
+                            $mbi2 = New-Object SIMem2+MBI4
+                            $ret2 = [SIMem2]::VirtualQueryEx($handle2,$addr2,[ref]$mbi2,[System.Runtime.InteropServices.Marshal]::SizeOf($mbi2))
+                            if ($ret2 -eq 0) { break }
+                            $size2 = $mbi2.RegionSize.ToInt64()
+                            if ($size2 -le 0) { break }
+                            $priv2 = $mbi2.Type  -eq 0x20000
+                            $comm2 = $mbi2.State -eq 0x1000
+                            $read2 = ($mbi2.Protect -eq 0x02 -or $mbi2.Protect -eq 0x04 -or $mbi2.Protect -eq 0x20 -or $mbi2.Protect -eq 0x40)
+                            if ($priv2 -and $comm2 -and $read2) {
+                                $buf2 = New-Object byte[] ([Math]::Min($size2,8MB)); $rb2 = 0
+                                if ([SIMem2]::ReadProcessMemory($handle2,$mbi2.Base,$buf2,$buf2.Length,[ref]$rb2) -and $rb2 -gt 0) {
+                                    $str2 = [System.Text.Encoding]::UTF8.GetString($buf2,0,$rb2)
+                                    foreach ($kw in $SI_KEYWORDS) {
+                                        if ($str2.IndexOf($kw,[System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                                            if (-not $allHits2[$kw]) { $allHits2[$kw] = 0 }
+                                            $allHits2[$kw]++
+                                        }
+                                    }
+                                }
+                                $scanned2 += $rb2
+                            }
+                            $next2 = $mbi2.Base.ToInt64() + $size2
+                            if ($next2 -ge 0x7FFFFFFFFFFF) { break }
+                            $addr2 = [IntPtr]::new($next2)
+                        }
+                        [SIMem2]::CloseHandle($handle2) | Out-Null
+                    }
+
+                    $siHitCount = 0
+                    foreach ($kw in $SI_KEYWORDS) {
+                        if ($allHits2[$kw] -and $allHits2[$kw] -gt 0) {
+                            $cnt2 = $allHits2[$kw]
+                            Log $LiveLog "  [HIT] $kw ($cnt2 regions)"
+                            $siBox.Invoke([Action]{ $siBox.Items.Add("[HIT] $kw") | Out-Null })
+                            $siHitCount++
+                        }
+                    }
+                    if ($siHitCount -eq 0) {
+                        Log $LiveLog "  [OK] No SI keyword hits"
+                        $siBox.Invoke([Action]{ $siBox.Items.Add("[OK] No hits") | Out-Null })
+                    }
+                    $sh = $siHitCount
+                    $siLbl.Invoke([Action]{ $siLbl.Text = "SI: $sh hit(s)" })
+                }
+            }
+            Log $LiveLog "SI scan done"
+            Log $LiveLog ""
+            Set-Prog 90
+        }
+
+        # ------------------------------------------------------------------
+        # WRITE FULL REPORT
+        # ------------------------------------------------------------------
+        if (-not $global:StopAll) {
+            Log $LiveLog "--- WRITING REPORT ---"
+            $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $lines = @(
+                "="*60,
+                "  SS TOOL FULL SCAN REPORT",
+                "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+                "  $env:COMPUTERNAME / $env:USERNAME",
+                "  Mods folder: $mc",
+                "="*60,""
+            )
+            $lines += "--- MOD ANALYZER ---"
+            foreach ($r in $reportMods) { $lines += "  $r" }
+            $lines += ""
+            $lines | Out-File "$out\fullscan_$stamp.txt" -Encoding UTF8
+            Log $LiveLog "Report saved: $out\fullscan_$stamp.txt"
+        }
+
+        Set-Prog 100
+        Set-Status "All scans complete"
+        Log $LiveLog ""
+        Log $LiveLog "============================================"
+        Log $LiveLog "  ALL SCANS COMPLETE"
+        Log $LiveLog "============================================"
+
+        $StartBtn.Invoke([Action]{ $StartBtn.Enabled = $true })
+        $StopBtn.Invoke([Action]{ $StopBtn.Enabled = $false })
     })
     $t.IsBackground = $true; $t.Start()
 })
 
-# =====================================================================
-Show-Page "Setup"
 [System.Windows.Forms.Application]::Run($Form)
