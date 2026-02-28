@@ -128,9 +128,6 @@ function Check-CheatStrings($filePath) {
     return $found
 }
 
-# =====================================================================
-# FORM
-# =====================================================================
 $Form = New-Object System.Windows.Forms.Form
 $Form.Text = "SS Tool  //  MC Cheat Scanner"
 $Form.Size = New-Object System.Drawing.Size(1100,820)
@@ -139,7 +136,6 @@ $Form.BackColor = $cBG
 $Form.StartPosition = "CenterScreen"
 $Form.FormBorderStyle = "Sizable"
 
-# Header
 $Header = New-Object System.Windows.Forms.Panel
 $Header.Dock = "Top"; $Header.Height = 52; $Header.BackColor = $cBG2
 $Header.Controls.Add((New-Lbl "SS TOOL  //  MC CHEAT SCANNER" 16 12 500 28 $cACCENT $cBG2 $fHead))
@@ -153,49 +149,28 @@ $NavLine = New-Object System.Windows.Forms.Panel
 $NavLine.Dock = "Top"; $NavLine.Height = 1; $NavLine.BackColor = $cBORDER
 $Form.Controls.Add($NavLine)
 
-# =====================================================================
-# TOP CONTROL BAR  (paths + start/stop)
-# =====================================================================
+$mc  = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
+$out = "$env:USERPROFILE\Desktop"
+
 $CtrlBar = New-Object System.Windows.Forms.Panel
-$CtrlBar.Dock = "Top"; $CtrlBar.Height = 110; $CtrlBar.BackColor = $cBG2
+$CtrlBar.Dock = "Top"; $CtrlBar.Height = 56; $CtrlBar.BackColor = $cBG2
 $Form.Controls.Add($CtrlBar)
 
-$CtrlBar.Controls.Add((New-Lbl "Mods Folder" 12 8 120 18 $cDIM $cBG2 $fTiny))
-$McEntry = New-Tbox 12 26 620 26
-$McEntry.Text = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
-$CtrlBar.Controls.Add($McEntry)
-$bMcBrowse = New-Btn "Browse" 638 24 80 28 $cBG3 $cACCENT
-$bMcBrowse.Add_Click({
-    $p = Browse-Folder "Select Minecraft mods folder"
-    if ($p) { $McEntry.Text = $p }
-})
-$CtrlBar.Controls.Add($bMcBrowse)
-$bMcOpen = New-Btn "Open" 724 24 60 28 $cBG3 $cDIM
-$bMcOpen.Add_Click({ Start-Process explorer.exe $McEntry.Text })
-$CtrlBar.Controls.Add($bMcOpen)
+$CtrlBar.Controls.Add((New-Lbl "Mods: $mc" 12 8 800 18 $cDIM $cBG2 $fTiny))
+$CtrlBar.Controls.Add((New-Lbl "Report saved to: $out" 12 26 800 18 $cDIM $cBG2 $fTiny))
 
-$CtrlBar.Controls.Add((New-Lbl "Output Folder" 12 58 120 18 $cDIM $cBG2 $fTiny))
-$OutEntry = New-Tbox 12 76 620 26
-$OutEntry.Text = "$env:USERPROFILE\Desktop"
-$CtrlBar.Controls.Add($OutEntry)
-$bOutBrowse = New-Btn "Browse" 638 74 80 28 $cBG3 $cACCENT
-$bOutBrowse.Add_Click({
-    $p = Browse-Folder "Select output folder"
-    if ($p) { $OutEntry.Text = $p }
-})
-$CtrlBar.Controls.Add($bOutBrowse)
-$bOutOpen = New-Btn "Open" 724 74 60 28 $cBG3 $cDIM
-$bOutOpen.Add_Click({ Start-Process explorer.exe $OutEntry.Text })
-$CtrlBar.Controls.Add($bOutOpen)
-
-# Big Start / Stop buttons
-$StartBtn = New-Btn "> RUN ALL SCANS" 810 20 240 32 $cGREEN $cBG
+$StartBtn = New-Btn "> RUN ALL SCANS" 820 8 240 18 $cGREEN $cBG
+$StartBtn.Size = New-Object System.Drawing.Size(240,18)
 $StartBtn.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+$StartBtn.Size = New-Object System.Drawing.Size(240,36)
+$StartBtn.Location = New-Object System.Drawing.Point(820,8)
 $CtrlBar.Controls.Add($StartBtn)
 
-$StopBtn = New-Btn "STOP" 810 60 240 32 $cRED $cWHITE
+$StopBtn = New-Btn "STOP" 820 8 240 36 $cRED $cWHITE
 $StopBtn.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+$StopBtn.Location = New-Object System.Drawing.Point(820,8)
 $StopBtn.Enabled = $false
+$StopBtn.Visible = $false
 $CtrlBar.Controls.Add($StopBtn)
 $StopBtn.Add_Click({ $global:StopAll = $true })
 
@@ -203,13 +178,11 @@ $CtrlLine = New-Object System.Windows.Forms.Panel
 $CtrlLine.Dock = "Top"; $CtrlLine.Height = 1; $CtrlLine.BackColor = $cBORDER
 $Form.Controls.Add($CtrlLine)
 
-# Progress bar
 $ProgBar = New-Object System.Windows.Forms.ProgressBar
 $ProgBar.Dock = "Top"; $ProgBar.Height = 6
 $ProgBar.Style = "Continuous"; $ProgBar.ForeColor = $cACCENT; $ProgBar.BackColor = $cBG2
 $Form.Controls.Add($ProgBar)
 
-# Status label
 $StatusBar = New-Object System.Windows.Forms.Panel
 $StatusBar.Dock = "Bottom"; $StatusBar.Height = 24; $StatusBar.BackColor = $cBG2
 $StatusLbl = New-Lbl "Ready -- set your paths above and click RUN ALL SCANS" 10 4 1060 18 $cDIM $cBG2 $fTiny
@@ -225,9 +198,6 @@ function Set-Prog($val) {
     else { $ProgBar.Value = [Math]::Min($val,100) }
 }
 
-# =====================================================================
-# MAIN SPLIT: left = results panels, right = live log
-# =====================================================================
 $MainSplit = New-Object System.Windows.Forms.SplitContainer
 $MainSplit.Dock = "Fill"; $MainSplit.SplitterDistance = 440
 $MainSplit.BackColor = $cBORDER
@@ -235,7 +205,6 @@ $MainSplit.Panel1.BackColor = $cBG
 $MainSplit.Panel2.BackColor = $cBG
 $Form.Controls.Add($MainSplit)
 
-# ---- RIGHT: Live log ----
 $MainSplit.Panel2.Controls.Add((New-Lbl "LIVE LOG" 10 8 200 18 $cDIM $cBG $fTiny))
 $LiveLog = New-Object System.Windows.Forms.TextBox
 $LiveLog.Location = New-Object System.Drawing.Point(6,28)
@@ -246,7 +215,6 @@ $LiveLog.Multiline = $true; $LiveLog.ScrollBars = "Vertical"
 $LiveLog.ReadOnly = $true; $LiveLog.WordWrap = $true
 $MainSplit.Panel2.Controls.Add($LiveLog)
 
-# ---- LEFT: Result panels stacked ----
 $LeftScroll = New-Object System.Windows.Forms.Panel
 $LeftScroll.Dock = "Fill"; $LeftScroll.BackColor = $cBG
 $LeftScroll.AutoScroll = $true
@@ -286,7 +254,6 @@ $siPanel,$siBox      = New-ResultPanel "SI DEEP SCAN" $cRED $topY;    $topY += 1
 
 $LeftScroll.Controls.AddRange(@($modPanel,$memPanel,$sysPanel,$siPanel))
 
-# Summary bar at bottom of left
 $SummaryPanel = New-Object System.Windows.Forms.Panel
 $SummaryPanel.Location = New-Object System.Drawing.Point(8,$topY)
 $SummaryPanel.Size = New-Object System.Drawing.Size(410,60)
@@ -299,18 +266,9 @@ $siLbl    = New-Lbl "SI: --"   130 32  120 20 $cRED    $cBG3 $fBold
 $SummaryPanel.Controls.AddRange(@($okLbl,$unkLbl,$cheatLbl,$memLbl,$siLbl))
 $LeftScroll.Controls.Add($SummaryPanel)
 
-# =====================================================================
-# START BUTTON LOGIC
-# =====================================================================
 $StartBtn.Add_Click({
-    $mc  = $McEntry.Text.Trim()
-    $out = $OutEntry.Text.Trim()
-
-    if (-not $mc -or -not (Test-Path $mc)) {
-        Log $LiveLog "[ERROR] Invalid mods folder. Set it above."; return
-    }
-    if (-not $out -or -not (Test-Path $out)) {
-        Log $LiveLog "[ERROR] Invalid output folder. Set it above."; return
+    if (-not (Test-Path $mc)) {
+        Log $LiveLog "[ERROR] Mods folder not found: $mc"; return
     }
 
     $global:StopAll = $false
@@ -320,7 +278,7 @@ $StartBtn.Add_Click({
     $okLbl.Text = "OK: --"; $unkLbl.Text = "UNK: --"
     $cheatLbl.Text = "CHEAT: --"; $memLbl.Text = "MEM: --"; $siLbl.Text = "SI: --"
 
-    $StartBtn.Enabled = $false; $StopBtn.Enabled = $true
+    $StartBtn.Visible = $false; $StopBtn.Visible = $true; $StopBtn.Enabled = $true
     Set-Status "Running all scans..."
 
     $t = [System.Threading.Thread]::new({
@@ -333,9 +291,6 @@ $StartBtn.Add_Click({
         Log $LiveLog "============================================"
         Log $LiveLog ""
 
-        # ------------------------------------------------------------------
-        # SECTION 1: MOD ANALYZER
-        # ------------------------------------------------------------------
         Log $LiveLog "--- MOD ANALYZER ---"
         Set-Status "Running mod analyzer..."
         Set-Prog 5
@@ -425,9 +380,6 @@ $StartBtn.Add_Click({
         Log $LiveLog ""
         Set-Prog 35
 
-        # ------------------------------------------------------------------
-        # SECTION 2: MEMORY SCAN
-        # ------------------------------------------------------------------
         if (-not $global:StopAll) {
             Log $LiveLog "--- MEMORY SCAN ---"
             Set-Status "Scanning memory..."
@@ -504,9 +456,6 @@ public class MemReader2 {
             Set-Prog 60
         }
 
-        # ------------------------------------------------------------------
-        # SECTION 3: SYS INFO
-        # ------------------------------------------------------------------
         if (-not $global:StopAll) {
             Log $LiveLog "--- SYS INFO ---"
             Set-Status "Gathering sys info..."
@@ -542,9 +491,6 @@ public class MemReader2 {
             Set-Prog 75
         }
 
-        # ------------------------------------------------------------------
-        # SECTION 4: SI DEEP SCAN
-        # ------------------------------------------------------------------
         if (-not $global:StopAll) {
             Log $LiveLog "--- SI DEEP SCAN ---"
             Set-Status "Running SI deep scan..."
@@ -637,9 +583,6 @@ public class SIMem2 {
             Set-Prog 90
         }
 
-        # ------------------------------------------------------------------
-        # WRITE FULL REPORT
-        # ------------------------------------------------------------------
         if (-not $global:StopAll) {
             Log $LiveLog "--- WRITING REPORT ---"
             $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -665,8 +608,8 @@ public class SIMem2 {
         Log $LiveLog "  ALL SCANS COMPLETE"
         Log $LiveLog "============================================"
 
-        $StartBtn.Invoke([Action]{ $StartBtn.Enabled = $true })
-        $StopBtn.Invoke([Action]{ $StopBtn.Enabled = $false })
+        $StartBtn.Invoke([Action]{ $StartBtn.Visible = $true })
+        $StopBtn.Invoke([Action]{ $StopBtn.Visible = $false; $StopBtn.Enabled = $false })
     })
     $t.IsBackground = $true; $t.Start()
 })
