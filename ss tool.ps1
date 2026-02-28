@@ -164,6 +164,7 @@ foreach ($name in @("Mods","Output","Scan")) {
 function Show-Page($name) {
     foreach ($p in $Pages.Values) { $p.Visible = $false }
     $Pages[$name].Visible = $true
+    $Pages[$name].BringToFront()
 }
 
 $pMods   = $Pages["Mods"]
