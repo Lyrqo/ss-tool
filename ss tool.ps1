@@ -1,760 +1,644 @@
-import sys, os, subprocess, importlib
+if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")) {
+    Start-Process powershell "-NoProfile -ExecutionPolicy Bypass -Command `"Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; Invoke-Expression (Invoke-RestMethod 'https://raw.githubusercontent.com/Lyrqo/ss-tool/main/ss%20tool.ps1')`"" -Verb RunAs
+    exit
+}
 
-DEPS = ["psutil", "pywin32", "pyautogui"]
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 
-def install_deps():
-    for pkg in DEPS:
-        try:
-            importlib.import_module(pkg if pkg != "pywin32" else "win32api")
-        except ImportError:
-            print(f"[SETUP] Installing {pkg}...")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", pkg, "-q"])
+[System.Windows.Forms.Application]::EnableVisualStyles()
 
-install_deps()
+$BG      = [System.Drawing.ColorTranslator]::FromHtml("#0a0c12")
+$BG2     = [System.Drawing.ColorTranslator]::FromHtml("#0f1219")
+$BG3     = [System.Drawing.ColorTranslator]::FromHtml("#141820")
+$ACCENT  = [System.Drawing.ColorTranslator]::FromHtml("#00d4ff")
+$RED     = [System.Drawing.ColorTranslator]::FromHtml("#ff3d5a")
+$GREEN   = [System.Drawing.ColorTranslator]::FromHtml("#00e87a")
+$ORANGE  = [System.Drawing.ColorTranslator]::FromHtml("#ffaa00")
+$TEXT    = [System.Drawing.ColorTranslator]::FromHtml("#d0d8e8")
+$DIM     = [System.Drawing.ColorTranslator]::FromHtml("#4a5568")
+$BORDER  = [System.Drawing.ColorTranslator]::FromHtml("#1e2535")
 
-import tkinter as tk
-from tkinter import ttk, filedialog, scrolledtext
-import threading, ctypes, ctypes.wintypes as wintypes
-import datetime, json, re, time, hashlib, base64
+$FONT_UI   = New-Object System.Drawing.Font("Segoe UI", 10)
+$FONT_BOLD = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+$FONT_MONO = New-Object System.Drawing.Font("Consolas", 9)
+$FONT_HEAD = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+$FONT_TINY = New-Object System.Drawing.Font("Consolas", 8)
 
-try:
-    import psutil
-    HAS_PSUTIL = True
-except ImportError:
-    HAS_PSUTIL = False
-
-try:
-    import win32gui, win32con, win32api, win32process
-    HAS_WIN32 = True
-except ImportError:
-    HAS_WIN32 = False
-
-try:
-    import pyautogui
-    pyautogui.FAILSAFE = False
-    pyautogui.PAUSE = 0.1
-    HAS_PYAUTOGUI = True
-except ImportError:
-    HAS_PYAUTOGUI = False
-
-BG     = "#0a0c12"
-BG2    = "#0f1219"
-BG3    = "#141820"
-BG4    = "#1a1f2e"
-ACCENT = "#00d4ff"
-RED    = "#ff3d5a"
-GREEN  = "#00e87a"
-ORANGE = "#ffaa00"
-TEXT   = "#d0d8e8"
-DIM    = "#4a5568"
-BORDER = "#1e2535"
-MONO   = ("Consolas", 9)
-UI     = ("Segoe UI", 10)
-BOLD   = ("Segoe UI Semibold", 11)
-HEAD   = ("Segoe UI Semibold", 13)
-
-CHEAT_NAMES = [
+$CHEAT_NAMES = @(
     "wurst","impact","future","liquidbounce","aristois","meteor",
     "killaura","sigma","entropy","novoline","rusherhack","vape",
     "astolfo","inertia","ghost","rise","tenacity","aura","esp",
     "aimbot","bhop","scaffold","velocity","criticals","nofall",
     "autoeat","autofish","tracers","xray","freecam","fly","speed",
-    "jesus","mixin","bytebuddy","javassist","classinjector",
-    "agentmain","premain","instrumentation",
-]
+    "jesus","mixin","bytebuddy","javassist","agentmain","premain"
+)
 
-BAD_JVM = ["-javaagent","-agentlib","-agentpath","-Xbootclasspath","bytebuddy","javassist"]
+$SCAN_EXTS = @(".jar",".zip",".class",".json",".cfg",".properties")
 
-MEM_SIGS = [
-    b"KillAura",b"killaura",b"AutoCrystal",b"autocrystal",b"Scaffold",
-    b"scaffold",b"Velocity",b"NoFall",b"Freecam",b"ESP",b"Xray",b"xray",
-    b"BHop",b"Flight",b"flight",b"CrystalAura",b"BaritoneAPI",b"baritone.api",
-    b"agentmain",b"premain",b"ClassFileTransformer",b"bytebuddy","net.bytebuddy".encode(),
-    b"javassist",b"aimbot",b"wallhack",b"autoclick",b"triggerbot",b"sendPacket",
-    b"injectPacket",b"noknockback",b"antiknockback",
-]
+$global:StopScan   = $false
+$global:McFolder   = ""
+$global:OutFolder  = ""
+$global:Findings   = @()
 
-SCAN_EXTS = {".jar",".zip",".class",".json",".cfg",".properties"}
+function New-Label {
+    param($Text, $X, $Y, $W, $H, $FG, $BG_C, $Font = $FONT_UI, $Align = "MiddleLeft")
+    $l = New-Object System.Windows.Forms.Label
+    $l.Text      = $Text
+    $l.Location  = New-Object System.Drawing.Point($X, $Y)
+    $l.Size      = New-Object System.Drawing.Size($W, $H)
+    $l.ForeColor = $FG
+    $l.BackColor = $BG_C
+    $l.Font      = $Font
+    $l.TextAlign = [System.Drawing.ContentAlignment]::$Align
+    return $l
+}
 
+function New-Button {
+    param($Text, $X, $Y, $W, $H, $BG_C, $FG)
+    $b = New-Object System.Windows.Forms.Button
+    $b.Text      = $Text
+    $b.Location  = New-Object System.Drawing.Point($X, $Y)
+    $b.Size      = New-Object System.Drawing.Size($W, $H)
+    $b.BackColor = $BG_C
+    $b.ForeColor = $FG
+    $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $b.FlatAppearance.BorderSize = 0
+    $b.Font      = $FONT_BOLD
+    $b.Cursor    = [System.Windows.Forms.Cursors]::Hand
+    return $b
+}
 
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except Exception:
-        return False
+function New-TextBox {
+    param($X, $Y, $W, $H, $Multi = $false)
+    $t = New-Object System.Windows.Forms.TextBox
+    $t.Location    = New-Object System.Drawing.Point($X, $Y)
+    $t.Size        = New-Object System.Drawing.Size($W, $H)
+    $t.BackColor   = $BG3
+    $t.ForeColor   = $TEXT
+    $t.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $t.Font        = $FONT_MONO
+    if ($Multi) {
+        $t.Multiline  = $true
+        $t.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
+        $t.ReadOnly   = $true
+        $t.WordWrap   = $true
+    }
+    return $t
+}
 
+function Write-Log {
+    param($LogBox, $Text, $Color = $null)
+    if ($LogBox.InvokeRequired) {
+        $LogBox.Invoke([Action[System.Windows.Forms.TextBox, string, object]]{ param($lb,$t,$c) Write-Log $lb $t $c }, $LogBox, $Text, $Color)
+        return
+    }
+    $LogBox.AppendText("$Text`r`n")
+    $LogBox.ScrollToCaret()
+}
 
-class App(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("MC Cheat Scanner")
-        self.geometry("1100x700")
-        self.minsize(960, 580)
-        self.configure(bg=BG)
-        self._mc_folder  = tk.StringVar()
-        self._out_folder = tk.StringVar()
-        self._findings   = []
-        self._mc_procs   = []
-        self._stop       = threading.Event()
-        self._progress   = tk.DoubleVar()
-        self._build()
+function Add-Finding {
+    param($ListBox, $Severity, $Category, $Detail)
+    $icon = switch ($Severity) { "critical" {"[CRIT]"} "warning" {"[WARN]"} default {"[INFO]"} }
+    $line = "$icon $Category`: $Detail"
+    if ($ListBox.InvokeRequired) {
+        $ListBox.Invoke([Action]{ $ListBox.Items.Add($line) | Out-Null }) 
+    } else {
+        $ListBox.Items.Add($line) | Out-Null
+    }
+    $global:Findings += [PSCustomObject]@{ Severity=$Severity; Category=$Category; Detail=$Detail }
+}
 
-    def _build(self):
-        self._build_header()
-        self._build_nav()
-        self._container = tk.Frame(self, bg=BG)
-        self._container.pack(fill="both", expand=True)
-        self._pages = {}
-        for PageClass in (SetupPage, ScanPage, MemoryPage, SysInfoPage):
-            page = PageClass(self._container, self)
-            self._pages[PageClass.NAME] = page
-            page.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self._build_statusbar()
-        self.show_page("Setup")
+# ── MAIN FORM ──────────────────────────────────────────────────────────────────
+$Form = New-Object System.Windows.Forms.Form
+$Form.Text            = "SS Tool  //  MC Cheat Scanner"
+$Form.Size            = New-Object System.Drawing.Size(1100, 720)
+$Form.MinimumSize     = New-Object System.Drawing.Size(960, 600)
+$Form.BackColor       = $BG
+$Form.ForeColor       = $TEXT
+$Form.StartPosition   = "CenterScreen"
+$Form.FormBorderStyle = "Sizable"
 
-    def _build_header(self):
-        h = tk.Frame(self, bg=BG2, height=52)
-        h.pack(fill="x")
-        h.pack_propagate(False)
-        tk.Label(h, text="⚡", font=("Segoe UI", 18), bg=BG2, fg=ACCENT).pack(side="left", padx=(18,6), pady=12)
-        tk.Label(h, text="MC CHEAT SCANNER", font=("Segoe UI Semibold", 14), bg=BG2, fg=TEXT).pack(side="left")
-        tk.Label(h, text=" v4.0", font=UI, bg=BG2, fg=DIM).pack(side="left")
-        admin_txt = "✔ ADMIN" if is_admin() else "⚠ NOT ADMIN"
-        admin_col = GREEN if is_admin() else RED
-        tk.Label(h, text=admin_txt, font=("Consolas", 9), bg=BG2, fg=admin_col).pack(side="right", padx=18)
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
+# Header
+$Header = New-Object System.Windows.Forms.Panel
+$Header.Dock      = "Top"
+$Header.Height    = 52
+$Header.BackColor = $BG2
+$Form.Controls.Add($Header)
 
-    def _build_nav(self):
-        nav = tk.Frame(self, bg=BG2)
-        nav.pack(fill="x")
-        self._nav_btns = {}
-        pages = [("Setup","⚙"), ("Scanner","🔍"), ("Memory","🧠"), ("Sys Info","🖥")]
-        for name, icon in pages:
-            btn = tk.Button(nav, text=f" {icon}  {name}", font=("Segoe UI Semibold", 10),
-                            bg=BG2, fg=DIM, relief="flat", bd=0, padx=20, pady=10,
-                            cursor="hand2", activebackground=BG3, activeforeground=TEXT,
-                            command=lambda n=name: self.show_page(n))
-            btn.pack(side="left")
-            self._nav_btns[name] = btn
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
+$Header.Controls.Add((New-Label "⚡  SS TOOL  //  MC CHEAT SCANNER" 16 12 500 28 $ACCENT $BG2 $FONT_HEAD))
+$AdminTxt = if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")) { "✔ ADMIN" } else { "⚠ NOT ADMIN" }
+$AdminCol = if ($AdminTxt -eq "✔ ADMIN") { $GREEN } else { $RED }
+$Header.Controls.Add((New-Label $AdminTxt 950 16 120 22 $AdminCol $BG2 $FONT_TINY "MiddleRight"))
 
-    def _build_statusbar(self):
-        bar = tk.Frame(self, bg=BG2, height=24)
-        bar.pack(fill="x", side="bottom")
-        bar.pack_propagate(False)
-        self._status_var = tk.StringVar(value="Ready — configure paths in Setup then run a scan")
-        tk.Label(bar, textvariable=self._status_var, font=("Consolas", 8),
-                 bg=BG2, fg=DIM).pack(side="left", padx=12)
-        self._time_var = tk.StringVar()
-        tk.Label(bar, textvariable=self._time_var, font=("Consolas", 8),
-                 bg=BG2, fg=DIM).pack(side="right", padx=12)
+$HeaderLine = New-Object System.Windows.Forms.Panel
+$HeaderLine.Dock      = "Top"
+$HeaderLine.Height    = 1
+$HeaderLine.BackColor = $BORDER
+$Form.Controls.Add($HeaderLine)
 
-    def show_page(self, name):
-        self._pages[name].tkraise()
-        for n, btn in self._nav_btns.items():
-            btn.configure(fg=ACCENT if n == name else DIM,
-                          bg=BG3 if n == name else BG2)
+# Tab Control
+$Tabs = New-Object System.Windows.Forms.TabControl
+$Tabs.Dock          = "Fill"
+$Tabs.Font          = $FONT_UI
+$Tabs.BackColor     = $BG
+$Tabs.Appearance    = [System.Windows.Forms.TabAppearance]::Normal
+$Form.Controls.Add($Tabs)
 
-    def set_status(self, msg):
-        self._status_var.set(msg)
+# Status bar
+$StatusBar = New-Object System.Windows.Forms.Panel
+$StatusBar.Dock      = "Bottom"
+$StatusBar.Height    = 24
+$StatusBar.BackColor = $BG2
+$Form.Controls.Add($StatusBar)
 
-    def set_time(self, msg):
-        self._time_var.set(msg)
+$StatusLabel = New-Label "Ready — set paths in Setup then run a scan" 10 4 900 18 $DIM $BG2 $FONT_TINY
+$StatusBar.Controls.Add($StatusLabel)
 
+function Set-Status { param($msg) 
+    if ($StatusLabel.InvokeRequired) { $StatusLabel.Invoke([Action]{ $StatusLabel.Text = $msg }) }
+    else { $StatusLabel.Text = $msg }
+}
 
-class BasePage(tk.Frame):
-    NAME = "Base"
+# ── TAB: SETUP ─────────────────────────────────────────────────────────────────
+$TabSetup = New-Object System.Windows.Forms.TabPage
+$TabSetup.Text      = "  ⚙  Setup  "
+$TabSetup.BackColor = $BG
+$Tabs.TabPages.Add($TabSetup)
 
-    def __init__(self, parent, app):
-        super().__init__(parent, bg=BG)
-        self.app = app
+$TabSetup.Controls.Add((New-Label "SETUP" 20 16 200 28 $ACCENT $BG $FONT_HEAD))
+$TabSetup.Controls.Add((New-Label "Set your folders before running any scan." 20 46 600 20 $DIM $BG $FONT_UI))
 
-    def _section_label(self, parent, text):
-        f = tk.Frame(parent, bg=BG)
-        f.pack(fill="x", padx=20, pady=(16,4))
-        tk.Label(f, text=text, font=("Segoe UI Semibold", 10), bg=BG, fg=ACCENT).pack(side="left")
-        tk.Frame(f, bg=BORDER, height=1).pack(side="left", fill="x", expand=True, padx=(10,0))
+$TabSetup.Controls.Add((New-Label "① Minecraft Mods Folder" 20 82 300 20 $ACCENT $BG $FONT_BOLD))
+$McEntry = New-TextBox 20 106 780 26
+$TabSetup.Controls.Add($McEntry)
+$BrowseMc = New-Button "Browse" 810 104 100 28 $BG3 $ACCENT
+$BrowseMc.Add_Click({
+    $d = New-Object System.Windows.Forms.FolderBrowserDialog
+    $d.Description = "Select Minecraft mods folder"
+    if ($d.ShowDialog() -eq "OK") { $McEntry.Text = $d.SelectedPath; $global:McFolder = $d.SelectedPath }
+})
+$TabSetup.Controls.Add($BrowseMc)
 
-    def _card(self, parent, padx=20, pady=8):
-        f = tk.Frame(parent, bg=BG3, bd=0, highlightthickness=1, highlightbackground=BORDER)
-        f.pack(fill="x", padx=padx, pady=pady)
-        return f
+$TabSetup.Controls.Add((New-Label "② Output / Report Folder" 20 148 300 20 $ACCENT $BG $FONT_BOLD))
+$OutEntry = New-TextBox 20 172 780 26
+$TabSetup.Controls.Add($OutEntry)
+$BrowseOut = New-Button "Browse" 810 170 100 28 $BG3 $ACCENT
+$BrowseOut.Add_Click({
+    $d = New-Object System.Windows.Forms.FolderBrowserDialog
+    $d.Description = "Select output folder"
+    if ($d.ShowDialog() -eq "OK") { $OutEntry.Text = $d.SelectedPath; $global:OutFolder = $d.SelectedPath }
+})
+$TabSetup.Controls.Add($BrowseOut)
 
-    def _log_widget(self, parent):
-        log = scrolledtext.ScrolledText(parent, bg=BG2, fg=TEXT, font=MONO,
-                                        relief="flat", bd=0, insertbackground=ACCENT,
-                                        state="disabled", wrap="word", padx=10, pady=8)
-        log.tag_config("critical", foreground=RED,    font=("Consolas", 9, "bold"))
-        log.tag_config("warning",  foreground=ORANGE)
-        log.tag_config("ok",       foreground=GREEN)
-        log.tag_config("info",     foreground=ACCENT)
-        log.tag_config("head",     foreground=ACCENT, font=("Consolas", 9, "bold"))
-        log.tag_config("dim",      foreground=DIM)
-        log.tag_config("normal",   foreground=TEXT)
-        return log
+$TabSetup.Controls.Add((New-Label "③ Quick Launch" 20 216 300 20 $ACCENT $BG $FONT_BOLD))
+$LaunchScan = New-Button "▶  File Scanner" 20 240 150 34 $GREEN $BG
+$LaunchScan.Add_Click({ $Tabs.SelectedTab = $TabScan })
+$TabSetup.Controls.Add($LaunchScan)
 
-    def _write(self, log, text, tag="normal"):
-        log.configure(state="normal")
-        log.insert("end", text + "\n", tag)
-        log.configure(state="disabled")
-        log.see("end")
+$LaunchMem = New-Button "▶  Memory Scan" 180 240 150 34 $ACCENT $BG
+$LaunchMem.Add_Click({ $Tabs.SelectedTab = $TabMemory })
+$TabSetup.Controls.Add($LaunchMem)
 
+$LaunchSys = New-Button "▶  Sys Info" 340 240 150 34 $ORANGE $BG
+$LaunchSys.Add_Click({ $Tabs.SelectedTab = $TabSysInfo })
+$TabSetup.Controls.Add($LaunchSys)
 
-class SetupPage(BasePage):
-    NAME = "Setup"
+$TabSetup.Controls.Add((New-Label "Requirements" 20 300 200 20 $ACCENT $BG $FONT_BOLD))
+$ReqText = ""
+$ReqText += if (Get-Command python -ErrorAction SilentlyContinue) { "✔ Python   " } else { "✘ Python   " }
+$ReqText += if ($AdminTxt -eq "✔ ADMIN") { "✔ Admin   " } else { "✘ Admin   " }
+$ReqText += if ([System.Environment]::OSVersion.Platform -eq "Win32NT") { "✔ Windows" } else { "✘ Windows" }
+$TabSetup.Controls.Add((New-Label $ReqText 20 324 600 22 $TEXT $BG $FONT_MONO))
 
-    def __init__(self, parent, app):
-        super().__init__(parent, app)
-        self._build()
+# ── TAB: FILE SCANNER ──────────────────────────────────────────────────────────
+$TabScan = New-Object System.Windows.Forms.TabPage
+$TabScan.Text      = "  🔍  Scanner  "
+$TabScan.BackColor = $BG
+$Tabs.TabPages.Add($TabScan)
 
-    def _build(self):
-        tk.Label(self, text="SETUP", font=("Segoe UI Semibold", 12),
-                 bg=BG, fg=ACCENT).pack(anchor="w", padx=24, pady=(20,2))
-        tk.Label(self, text="Configure your scan paths before running any module.",
-                 font=UI, bg=BG, fg=DIM).pack(anchor="w", padx=24, pady=(0,12))
+$ScanTopPanel = New-Object System.Windows.Forms.Panel
+$ScanTopPanel.Dock      = "Top"
+$ScanTopPanel.Height    = 48
+$ScanTopPanel.BackColor = $BG2
+$TabScan.Controls.Add($ScanTopPanel)
 
-        self._section_label(self, "① Minecraft Mods Folder")
-        c1 = self._card(self)
-        row1 = tk.Frame(c1, bg=BG3)
-        row1.pack(fill="x", padx=14, pady=12)
-        tk.Label(row1, text="Path:", font=UI, bg=BG3, fg=DIM, width=6, anchor="w").pack(side="left")
-        tk.Entry(row1, textvariable=self.app._mc_folder, font=MONO, bg=BG4, fg=TEXT,
-                 insertbackground=ACCENT, relief="flat", bd=0,
-                 highlightthickness=1, highlightcolor=ACCENT, highlightbackground=BORDER
-                 ).pack(side="left", fill="x", expand=True, ipady=6, padx=(0,8))
-        tk.Button(row1, text="Browse", font=UI, bg=BG4, fg=ACCENT,
-                  relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
-                  command=lambda: self._browse(self.app._mc_folder)).pack(side="left")
+$ScanTopPanel.Controls.Add((New-Label "FILE SCANNER" 16 12 300 26 $ACCENT $BG2 $FONT_BOLD))
 
-        self._section_label(self, "② Output / Report Folder")
-        c2 = self._card(self)
-        row2 = tk.Frame(c2, bg=BG3)
-        row2.pack(fill="x", padx=14, pady=12)
-        tk.Label(row2, text="Path:", font=UI, bg=BG3, fg=DIM, width=6, anchor="w").pack(side="left")
-        tk.Entry(row2, textvariable=self.app._out_folder, font=MONO, bg=BG4, fg=TEXT,
-                 insertbackground=ACCENT, relief="flat", bd=0,
-                 highlightthickness=1, highlightcolor=ACCENT, highlightbackground=BORDER
-                 ).pack(side="left", fill="x", expand=True, ipady=6, padx=(0,8))
-        tk.Button(row2, text="Browse", font=UI, bg=BG4, fg=ACCENT,
-                  relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
-                  command=lambda: self._browse(self.app._out_folder)).pack(side="left")
+$StopScanBtn = New-Button "■  STOP" 940 10 100 28 $RED ([System.Drawing.Color]::White)
+$StopScanBtn.Enabled = $false
+$StopScanBtn.Add_Click({ $global:StopScan = $true })
+$ScanTopPanel.Controls.Add($StopScanBtn)
 
-        self._section_label(self, "③ Quick Launch")
-        c3 = self._card(self)
-        btns = tk.Frame(c3, bg=BG3)
-        btns.pack(fill="x", padx=14, pady=14)
-        for label, page, color in [
-            ("▶  Run File Scanner", "Scanner", GREEN),
-            ("▶  Run Memory Scan",  "Memory",  ACCENT),
-            ("▶  View Sys Info",    "Sys Info", ORANGE),
-        ]:
-            tk.Button(btns, text=label, font=BOLD, bg=color, fg=BG,
-                      relief="flat", bd=0, padx=18, pady=8, cursor="hand2",
-                      activebackground=color,
-                      command=lambda p=page: self.app.show_page(p)).pack(side="left", padx=(0,10))
+$StartScanBtn = New-Button "▶  START SCAN" 820 10 116 28 $GREEN $BG
+$ScanTopPanel.Controls.Add($StartScanBtn)
 
-        self._section_label(self, "Requirements")
-        c4 = self._card(self)
-        deps_f = tk.Frame(c4, bg=BG3)
-        deps_f.pack(fill="x", padx=14, pady=10)
-        for label, ok in [
-            ("psutil",    HAS_PSUTIL),
-            ("pywin32",   HAS_WIN32),
-            ("pyautogui", HAS_PYAUTOGUI),
-            ("Windows",   sys.platform == "win32"),
-            ("Admin",     is_admin()),
-        ]:
-            chip = tk.Frame(deps_f, bg=BG4, padx=10, pady=4)
-            chip.pack(side="left", padx=(0,6))
-            tk.Label(chip, text=("✔ " if ok else "✘ ") + label,
-                     font=("Consolas", 9), bg=BG4,
-                     fg=GREEN if ok else RED).pack()
+$ScanProgress = New-Object System.Windows.Forms.ProgressBar
+$ScanProgress.Dock  = "Top"
+$ScanProgress.Height = 4
+$ScanProgress.Style  = "Continuous"
+$ScanProgress.BackColor = $BG2
+$ScanProgress.ForeColor = $ACCENT
+$TabScan.Controls.Add($ScanProgress)
 
-    def _browse(self, var):
-        d = filedialog.askdirectory()
-        if d:
-            var.set(d)
+$ScanBody = New-Object System.Windows.Forms.SplitContainer
+$ScanBody.Dock            = "Fill"
+$ScanBody.SplitterDistance = 300
+$ScanBody.BackColor       = $BORDER
+$ScanBody.Panel1.BackColor = $BG2
+$ScanBody.Panel2.BackColor = $BG
+$TabScan.Controls.Add($ScanBody)
 
+$ScanBody.Panel1.Controls.Add((New-Label "FINDINGS" 10 8 200 18 $DIM $BG2 $FONT_TINY))
 
-class ScanPage(BasePage):
-    NAME = "Scanner"
+$CountPanel = New-Object System.Windows.Forms.Panel
+$CountPanel.Location  = New-Object System.Drawing.Point(6, 28)
+$CountPanel.Size      = New-Object System.Drawing.Size(282, 48)
+$CountPanel.BackColor = $BG2
+$ScanBody.Panel1.Controls.Add($CountPanel)
 
-    def __init__(self, parent, app):
-        super().__init__(parent, app)
-        self._stop  = threading.Event()
-        self._findings = []
-        self._build()
+$CritLabel = New-Label "0  CRIT" 0 0 94 48 $RED $BG3 $FONT_BOLD "MiddleCenter"
+$WarnLabel = New-Label "0  WARN" 95 0 94 48 $ORANGE $BG3 $FONT_BOLD "MiddleCenter"
+$InfoLabel = New-Label "0  INFO" 190 0 94 48 $ACCENT $BG3 $FONT_BOLD "MiddleCenter"
+$CountPanel.Controls.Add($CritLabel)
+$CountPanel.Controls.Add($WarnLabel)
+$CountPanel.Controls.Add($InfoLabel)
 
-    def _build(self):
-        top = tk.Frame(self, bg=BG2)
-        top.pack(fill="x")
-        tk.Label(top, text="FILE SCANNER", font=("Segoe UI Semibold", 11),
-                 bg=BG2, fg=ACCENT).pack(side="left", padx=20, pady=12)
-        self._stop_btn = tk.Button(top, text="■  STOP", font=BOLD, bg=RED, fg="white",
-                                    relief="flat", bd=0, padx=16, pady=6, cursor="hand2",
-                                    state="disabled", command=self._do_stop)
-        self._stop_btn.pack(side="right", padx=8, pady=10)
-        self._start_btn = tk.Button(top, text="▶  START", font=BOLD, bg=GREEN, fg=BG,
-                                     relief="flat", bd=0, padx=16, pady=6, cursor="hand2",
-                                     command=self._start)
-        self._start_btn.pack(side="right", pady=10)
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
+$FindingsList = New-Object System.Windows.Forms.ListBox
+$FindingsList.Location  = New-Object System.Drawing.Point(6, 82)
+$FindingsList.Size      = New-Object System.Drawing.Size(282, 460)
+$FindingsList.BackColor = $BG2
+$FindingsList.ForeColor = $TEXT
+$FindingsList.BorderStyle = "None"
+$FindingsList.Font      = $FONT_MONO
+$ScanBody.Panel1.Controls.Add($FindingsList)
 
-        pb = tk.Frame(self, bg=BG, pady=0)
-        pb.pack(fill="x")
-        self._pb = ttk.Progressbar(pb, variable=self.app._progress, maximum=100)
-        s = ttk.Style(); s.theme_use("clam")
-        s.configure("Horizontal.TProgressbar", troughcolor=BG2, background=ACCENT,
-                     lightcolor=ACCENT, darkcolor=ACCENT, bordercolor=BG, thickness=4)
-        self._pb.pack(fill="x")
+$ScanBody.Panel2.Controls.Add((New-Label "SCAN LOG" 10 8 200 18 $DIM $BG $FONT_TINY))
+$ScanLog = New-TextBox 6 28 0 0 $true
+$ScanLog.Dock      = "Fill"
+$ScanLog.BackColor = $BG
+$ScanLog.ForeColor = $TEXT
+$ScanBody.Panel2.Controls.Add($ScanLog)
 
-        body = tk.Frame(self, bg=BG)
-        body.pack(fill="both", expand=True)
+$StartScanBtn.Add_Click({
+    $global:McFolder  = $McEntry.Text.Trim()
+    $global:OutFolder = $OutEntry.Text.Trim()
+    if (-not $global:McFolder -or -not (Test-Path $global:McFolder)) {
+        Write-Log $ScanLog "[ERROR] Set a valid Minecraft folder in Setup first."
+        return
+    }
+    if (-not $global:OutFolder -or -not (Test-Path $global:OutFolder)) {
+        Write-Log $ScanLog "[ERROR] Set a valid output folder in Setup first."
+        return
+    }
+    $global:StopScan = $false
+    $global:Findings = @()
+    $FindingsList.Items.Clear()
+    $ScanLog.Clear()
+    $ScanProgress.Value = 0
+    $CritLabel.Text = "0  CRIT"
+    $WarnLabel.Text = "0  WARN"
+    $InfoLabel.Text = "0  INFO"
+    $StartScanBtn.Enabled = $false
+    $StopScanBtn.Enabled  = $true
+    Set-Status "File scan running..."
 
-        left = tk.Frame(body, bg=BG2, width=300)
-        left.pack(side="left", fill="y")
-        left.pack_propagate(False)
-        tk.Frame(body, bg=BORDER, width=1).pack(side="left", fill="y")
+    $job = [System.Threading.Thread]::new({
+        $mc  = $global:McFolder
+        $out = $global:OutFolder
+        $ts  = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Write-Log $ScanLog "Started  $ts"
+        Write-Log $ScanLog "Folder   $mc"
+        Write-Log $ScanLog ""
 
-        tk.Label(left, text="FINDINGS", font=("Consolas", 9, "bold"),
-                 bg=BG2, fg=DIM).pack(anchor="w", padx=12, pady=(10,4))
+        # Step 1 - Directory scan
+        Write-Log $ScanLog "── Directory Scan ──────────────────────────"
+        $ScanProgress.Invoke([Action]{ $ScanProgress.Value = 20 })
+        $skipDirs = @("versions","assets","libraries","natives","cache")
+        Get-ChildItem -Path $mc -Recurse -ErrorAction SilentlyContinue | Where-Object {
+            $rel = $_.FullName.Replace($mc,"").TrimStart("\")
+            $topDir = $rel.Split("\")[0].ToLower()
+            $skipDirs -notcontains $topDir
+        } | ForEach-Object {
+            if ($global:StopScan) { return }
+            $name = $_.Name.ToLower()
+            $ext  = $_.Extension.ToLower()
+            if ($SCAN_EXTS -notcontains $ext) { return }
+            foreach ($ch in $CHEAT_NAMES) {
+                if ($name -match $ch) {
+                    Write-Log $ScanLog "[CRIT] Cheat file: $($_.Name)"
+                    Add-Finding $FindingsList "critical" "Cheat File" "Matches '$ch' — $($_.FullName)"
+                    $c = [int]($CritLabel.Text.Split(" ")[0]) + 1
+                    $CritLabel.Invoke([Action]{ $CritLabel.Text = "$c  CRIT" })
+                }
+            }
+            if ($ext -in @(".json",".cfg",".properties")) {
+                try {
+                    $content = Get-Content $_.FullName -Raw -ErrorAction Stop | Select-String -Pattern ($CHEAT_NAMES -join "|") -Quiet
+                    if ($content) {
+                        Write-Log $ScanLog "[WARN] Cheat string in config: $($_.Name)"
+                        Add-Finding $FindingsList "warning" "Config Match" "$($_.FullName)"
+                        $w = [int]($WarnLabel.Text.Split(" ")[0]) + 1
+                        $WarnLabel.Invoke([Action]{ $WarnLabel.Text = "$w  WARN" })
+                    }
+                } catch {}
+            }
+        }
+        Write-Log $ScanLog "✔ Directory scan done"
 
-        counts = tk.Frame(left, bg=BG2)
-        counts.pack(fill="x", padx=8, pady=(0,8))
-        self._c_crit = tk.StringVar(value="0")
-        self._c_warn = tk.StringVar(value="0")
-        self._c_info = tk.StringVar(value="0")
-        for var, lbl, col in [(self._c_crit,"CRIT",RED),(self._c_warn,"WARN",ORANGE),(self._c_info,"INFO",ACCENT)]:
-            f = tk.Frame(counts, bg=BG3, padx=10, pady=6)
-            f.pack(side="left", expand=True, fill="x", padx=2)
-            tk.Label(f, textvariable=var, font=("Consolas", 16, "bold"), bg=BG3, fg=col).pack()
-            tk.Label(f, text=lbl, font=("Consolas", 8), bg=BG3, fg=DIM).pack()
+        # Step 2 - Startup check
+        $ScanProgress.Invoke([Action]{ $ScanProgress.Value = 60 })
+        Write-Log $ScanLog ""
+        Write-Log $ScanLog "── Startup Check ───────────────────────────"
+        $startupPaths = @(
+            "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+            "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+        )
+        foreach ($sp in $startupPaths) {
+            if (Test-Path $sp) {
+                Get-ChildItem $sp | ForEach-Object {
+                    foreach ($ch in $CHEAT_NAMES) {
+                        if ($_.Name.ToLower() -match $ch) {
+                            Write-Log $ScanLog "[CRIT] Cheat in startup: $($_.Name)"
+                            Add-Finding $FindingsList "critical" "Startup" "$($_.FullName)"
+                        }
+                    }
+                }
+            }
+        }
+        $regPaths = @(
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
+            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
+        )
+        foreach ($rp in $regPaths) {
+            if (Test-Path $rp) {
+                Get-ItemProperty $rp | Get-Member -MemberType NoteProperty | ForEach-Object {
+                    $val = (Get-ItemProperty $rp).$($_.Name)
+                    foreach ($ch in $CHEAT_NAMES) {
+                        if ($_.Name.ToLower() -match $ch -or "$val".ToLower() -match $ch) {
+                            Write-Log $ScanLog "[CRIT] Registry Run: $($_.Name)"
+                            Add-Finding $FindingsList "critical" "Registry Run" "$($_.Name) = $val"
+                        }
+                    }
+                }
+            }
+        }
+        Write-Log $ScanLog "✔ Startup check done"
 
-        lbf = tk.Frame(left, bg=BG2)
-        lbf.pack(fill="both", expand=True, padx=6, pady=4)
-        sb = tk.Scrollbar(lbf, bg=BG2, troughcolor=BG, relief="flat", bd=0)
-        sb.pack(side="right", fill="y")
-        self._lb = tk.Listbox(lbf, bg=BG2, fg=TEXT, selectbackground=BG4,
-                               selectforeground=ACCENT, font=MONO, relief="flat",
-                               bd=0, yscrollcommand=sb.set, activestyle="none",
-                               cursor="hand2")
-        self._lb.pack(side="left", fill="both", expand=True)
-        sb.config(command=self._lb.yview)
-        self._lb.bind("<<ListboxSelect>>", self._on_select)
+        # Step 3 - Write report
+        $ScanProgress.Invoke([Action]{ $ScanProgress.Value = 90 })
+        Write-Log $ScanLog ""
+        Write-Log $ScanLog "── Writing Report ──────────────────────────"
+        $stamp   = Get-Date -Format "yyyyMMdd_HHmmss"
+        $txtPath = "$out\scan_$stamp.txt"
+        $jsonPath= "$out\scan_$stamp.json"
+        $lines   = @(
+            "="*60,
+            "  SS TOOL // MC CHEAT SCANNER REPORT",
+            "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+            "  $env:COMPUTERNAME / $env:USERNAME",
+            "  Scanned: $mc",
+            "="*60, "",
+            "  Total: $($global:Findings.Count)  Critical: $(($global:Findings | Where-Object Severity -eq 'critical').Count)  Warning: $(($global:Findings | Where-Object Severity -eq 'warning').Count)",
+            ""
+        )
+        foreach ($f in $global:Findings) {
+            $lines += "  [$($f.Severity.ToUpper())]  $($f.Category) — $($f.Detail)"
+        }
+        $lines | Out-File $txtPath -Encoding UTF8
+        $global:Findings | ConvertTo-Json | Out-File $jsonPath -Encoding UTF8
+        Write-Log $ScanLog "✔ Report: $txtPath"
+        Write-Log $ScanLog "✔ JSON:   $jsonPath"
 
-        right = tk.Frame(body, bg=BG)
-        right.pack(side="left", fill="both", expand=True)
-        tk.Label(right, text="SCAN LOG", font=("Consolas", 9, "bold"),
-                 bg=BG, fg=DIM).pack(anchor="w", padx=14, pady=(10,4))
-        self._log = self._log_widget(right)
-        self._log.pack(fill="both", expand=True, padx=8, pady=(0,8))
+        $ScanProgress.Invoke([Action]{ $ScanProgress.Value = 100 })
+        $crits = ($global:Findings | Where-Object Severity -eq "critical").Count
+        Set-Status "Done — $($global:Findings.Count) findings, $crits critical"
+        Write-Log $ScanLog ""
+        Write-Log $ScanLog "✔ Scan complete"
+        $StartScanBtn.Invoke([Action]{ $StartScanBtn.Enabled = $true })
+        $StopScanBtn.Invoke([Action]{ $StopScanBtn.Enabled = $false })
+    })
+    $job.IsBackground = $true
+    $job.Start()
+})
 
-    def _start(self):
-        mc = self.app._mc_folder.get().strip()
-        out = self.app._out_folder.get().strip()
-        if not mc or not os.path.isdir(mc):
-            self._write(self._log, "❌  Set Minecraft folder in Setup first.", "critical"); return
-        if not out or not os.path.isdir(out):
-            self._write(self._log, "❌  Set output folder in Setup first.", "critical"); return
-        self._findings.clear()
-        self._lb.delete(0, "end")
-        self._c_crit.set("0"); self._c_warn.set("0"); self._c_info.set("0")
-        self._log.configure(state="normal"); self._log.delete("1.0","end"); self._log.configure(state="disabled")
-        self.app._progress.set(0)
-        self._stop.clear()
-        self._start_btn.configure(state="disabled")
-        self._stop_btn.configure(state="normal")
-        self.app.set_status("File scan running...")
-        threading.Thread(target=self._run, daemon=True).start()
+# ── TAB: MEMORY SCANNER ────────────────────────────────────────────────────────
+$TabMemory = New-Object System.Windows.Forms.TabPage
+$TabMemory.Text      = "  🧠  Memory  "
+$TabMemory.BackColor = $BG
+$Tabs.TabPages.Add($TabMemory)
 
-    def _do_stop(self):
-        self._stop.set()
+$MemTopPanel = New-Object System.Windows.Forms.Panel
+$MemTopPanel.Dock      = "Top"
+$MemTopPanel.Height    = 48
+$MemTopPanel.BackColor = $BG2
+$TabMemory.Controls.Add($MemTopPanel)
 
-    def _run(self):
-        t0 = time.time()
-        mc = self.app._mc_folder.get().strip()
-        out = self.app._out_folder.get().strip()
-        self._write(self._log, f"Started  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", "head")
-        self._write(self._log, f"Folder   {mc}", "dim")
+$MemTopPanel.Controls.Add((New-Label "MEMORY SCANNER" 16 12 400 26 $ACCENT $BG2 $FONT_BOLD))
+$MemTopPanel.Controls.Add((New-Label "Scans javaw.exe RAM for cheat signatures  (requires admin)" 220 16 500 18 $DIM $BG2 $FONT_TINY))
 
-        steps = [
-            ("Process Check",  self._scan_procs),
-            ("JVM Args",       self._scan_jvm),
-            ("File Handles",   self._scan_handles),
-            ("Directory Scan", lambda: self._scan_dirs(mc)),
-            ("Startup Check",  self._scan_startup),
-            ("Write Report",   lambda: self._write_report(out)),
-        ]
-        for i, (label, fn) in enumerate(steps):
-            if self._stop.is_set(): break
-            self.app._progress.set((i / len(steps)) * 100)
-            self._write(self._log, f"\n── {label} ──", "head")
-            try: fn()
-            except Exception as e: self._write(self._log, f"Error: {e}", "warning")
+$global:StopMem = $false
+$StopMemBtn = New-Button "■  STOP" 940 10 100 28 $RED ([System.Drawing.Color]::White)
+$StopMemBtn.Enabled = $false
+$StopMemBtn.Add_Click({ $global:StopMem = $true })
+$MemTopPanel.Controls.Add($StopMemBtn)
 
-        elapsed = time.time() - t0
-        self.app._progress.set(100)
-        self.app.set_time(f"Scan: {elapsed:.1f}s")
-        self._write(self._log, f"\n✔ Finished in {elapsed:.1f}s", "ok")
-        crits = sum(1 for f in self._findings if f["severity"] == "critical")
-        self.app.set_status(f"Done — {len(self._findings)} findings, {crits} critical")
-        self.after(0, lambda: (self._start_btn.configure(state="normal"),
-                               self._stop_btn.configure(state="disabled")))
+$StartMemBtn = New-Button "▶  SCAN MEMORY" 800 10 136 28 $ACCENT $BG
+$MemTopPanel.Controls.Add($StartMemBtn)
 
-    def _add(self, sev, cat, detail, extra=""):
-        self._findings.append({"severity":sev,"category":cat,"detail":detail,"extra":extra})
-        icons = {"critical":"🔴","warning":"🟠","info":"🔵"}
-        colors = {"critical":RED,"warning":ORANGE,"info":ACCENT}
-        short = f"{icons.get(sev,'⚪')} {cat}: {detail[:44]}{'…' if len(detail)>44 else ''}"
-        self._lb.insert("end", short)
-        self._lb.itemconfig(self._lb.size()-1, fg=colors.get(sev, TEXT))
-        self._c_crit.set(str(sum(1 for f in self._findings if f["severity"]=="critical")))
-        self._c_warn.set(str(sum(1 for f in self._findings if f["severity"]=="warning")))
-        self._c_info.set(str(sum(1 for f in self._findings if f["severity"]=="info")))
+$MemLog = New-TextBox 8 56 0 0 $true
+$MemLog.Dock      = "Fill"
+$MemLog.BackColor = $BG
+$MemLog.ForeColor = $TEXT
+$TabMemory.Controls.Add($MemLog)
 
-    def _on_select(self, _):
-        sel = self._lb.curselection()
-        if not sel or sel[0] >= len(self._findings): return
-        f = self._findings[sel[0]]
-        self._write(self._log, f"\n▸ {f['category']} [{f['severity'].upper()}]", "head")
-        self._write(self._log, f"  {f['detail']}", "normal")
-        if f["extra"]: self._write(self._log, f"  {f['extra']}", "dim")
+$StartMemBtn.Add_Click({
+    $MemLog.Clear()
+    $global:StopMem = $false
+    $StartMemBtn.Enabled = $false
+    $StopMemBtn.Enabled  = $true
+    Set-Status "Memory scan running..."
 
-    def _scan_procs(self):
-        self.app._mc_procs = []
-        if not HAS_PSUTIL: self._write(self._log, "psutil not available", "dim"); return
-        for p in psutil.process_iter(["pid","name","cmdline"]):
-            try:
-                name = (p.info["name"] or "").lower()
-                cmd  = " ".join(p.info["cmdline"] or []).lower()
-                if ("java" in name or "minecraft" in name) and \
-                   any(k in cmd for k in ["minecraft","lwjgl","net.minecraft","forge","fabric"]):
-                    self.app._mc_procs.append(p)
-                    self._write(self._log, f"✔ Minecraft PID {p.pid} — {p.info['name']}", "ok")
-                    self._add("info","Process",f"Minecraft PID {p.pid}")
-            except (psutil.NoSuchProcess, psutil.AccessDenied): pass
-        if not self.app._mc_procs:
-            self._write(self._log, "No running Minecraft found — file scan continues", "dim")
+    $job = [System.Threading.Thread]::new({
+        Write-Log $MemLog "Memory scan started  $(Get-Date -Format 'HH:mm:ss')"
+        Write-Log $MemLog ""
 
-    def _scan_jvm(self):
-        if not self.app._mc_procs: self._write(self._log,"No processes","dim"); return
-        for p in self.app._mc_procs:
-            try:
-                cmd = " ".join(p.cmdline())
-                for flag in BAD_JVM:
-                    if flag.lower() in cmd.lower():
-                        sev = "critical" if flag.startswith("-") else "warning"
-                        self._write(self._log, f"{'🔴' if sev=='critical' else '🟠'} Flag: {flag}", sev)
-                        self._add(sev,"JVM Flag",f"'{flag}' in PID {p.pid}",cmd[:200])
-                agents = re.findall(r'-javaagent[=:]([^\s"]+)', cmd, re.IGNORECASE)
-                for a in agents:
-                    self._write(self._log, f"🔴 Agent JAR: {a}", "critical")
-                    self._add("critical","Java Agent",os.path.basename(a),a)
-                    for ch in CHEAT_NAMES:
-                        if ch in a.lower():
-                            self._write(self._log, f"🚨 KNOWN CHEAT: {ch.upper()}", "critical")
-                            self._add("critical","Known Cheat",f"Matches: {ch}",a)
-                if not agents: self._write(self._log, f"✔ No agent flags PID {p.pid}", "ok")
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                self._write(self._log, f"Access denied PID {p.pid}", "warning")
-
-    def _scan_handles(self):
-        if not self.app._mc_procs: self._write(self._log,"No processes","dim"); return
-        for p in self.app._mc_procs:
-            try:
-                files = p.open_files()
-                for f in files:
-                    pl = f.path.lower()
-                    for ch in CHEAT_NAMES:
-                        if ch in pl:
-                            self._write(self._log, f"🔴 Cheat file open: {f.path}", "critical")
-                            self._add("critical","Cheat Handle",f"Matches '{ch}'",f.path)
-                    if f.path.endswith(".jar") and "minecraft" not in pl:
-                        self._write(self._log, f"🟠 Unknown JAR: {f.path}", "warning")
-                        self._add("warning","Unknown JAR","Unexpected JAR",f.path)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                self._write(self._log, f"Access denied PID {p.pid}", "warning")
-
-    def _scan_dirs(self, root):
-        self._write(self._log, f"Scanning: {root}", "info")
-        for dirpath, dirnames, filenames in os.walk(root):
-            if self._stop.is_set(): return
-            dirnames[:] = [d for d in dirnames if d.lower() not in
-                            {"versions","assets","libraries","natives","cache"}]
-            for fname in filenames:
-                ext = os.path.splitext(fname)[1].lower()
-                if ext not in SCAN_EXTS: continue
-                fpath = os.path.join(dirpath, fname)
-                for ch in CHEAT_NAMES:
-                    if ch in fname.lower():
-                        self._write(self._log, f"🔴 Cheat file: {fname}", "critical")
-                        self._add("critical","Cheat File",f"Matches '{ch}'",fpath)
-                if ext in {".json",".cfg",".properties"}:
-                    try:
-                        content = open(fpath, errors="replace").read(65536).lower()
-                        for ch in CHEAT_NAMES:
-                            if ch in content:
-                                self._write(self._log, f"🟠 Cheat in config: {fname}", "warning")
-                                self._add("warning","Config Match",f"'{ch}' in file",fpath)
-                                break
-                    except Exception: pass
-
-    def _scan_startup(self):
-        if sys.platform != "win32": self._write(self._log,"Windows-only","dim"); return
-        for d in [os.path.join(os.environ.get("APPDATA",""), r"Microsoft\Windows\Start Menu\Programs\Startup"),
-                  os.path.join(os.environ.get("PROGRAMDATA",""), r"Microsoft\Windows\Start Menu\Programs\Startup")]:
-            if os.path.isdir(d):
-                for item in os.listdir(d):
-                    for ch in CHEAT_NAMES:
-                        if ch in item.lower():
-                            self._write(self._log, f"🔴 Cheat in startup: {item}", "critical")
-                            self._add("critical","Startup",f"Matches '{ch}'",os.path.join(d,item))
-        try:
-            import winreg
-            for hive, path in [(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"),
-                                (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run")]:
-                try:
-                    key = winreg.OpenKey(hive, path); i = 0
-                    while True:
-                        try:
-                            name, val, _ = winreg.EnumValue(key, i)
-                            for ch in CHEAT_NAMES:
-                                if ch in val.lower() or ch in name.lower():
-                                    self._write(self._log, f"🔴 Registry Run: {name}", "critical")
-                                    self._add("critical","Registry Run",f"'{name}' matches '{ch}'",val)
-                            i += 1
-                        except OSError: break
-                    winreg.CloseKey(key)
-                except OSError: pass
-        except ImportError: pass
-        self._write(self._log, "✔ Startup check done", "ok")
-
-    def _write_report(self, out):
-        ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        crits = [f for f in self._findings if f["severity"]=="critical"]
-        warns = [f for f in self._findings if f["severity"]=="warning"]
-        infos = [f for f in self._findings if f["severity"]=="info"]
-        lines = [
-            "="*60, "  MC CHEAT SCANNER REPORT",
-            f"  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"  {os.environ.get('COMPUTERNAME','?')} / {os.environ.get('USERNAME','?')}",
-            f"  Scanned: {self.app._mc_folder.get()}","="*60,"",
-            f"  Total: {len(self._findings)}  Critical: {len(crits)}  Warning: {len(warns)}  Info: {len(infos)}","",
-        ]
-        for label, items, icon in [("CRITICAL",crits,"🔴"),("WARNING",warns,"🟠"),("INFO",infos,"🔵")]:
-            if items:
-                lines += ["", f"  {icon}  {label}", "  "+"-"*40]
-                for f in items:
-                    lines += [f"  {f['category']} — {f['detail']}", f"  {f['extra']}" if f["extra"] else "",""]
-        txt = os.path.join(out, f"scan_{ts}.txt")
-        jf  = os.path.join(out, f"scan_{ts}.json")
-        open(txt,"w",encoding="utf-8").write("\n".join(lines))
-        json.dump({"time":datetime.datetime.now().isoformat(),"findings":self._findings},
-                   open(jf,"w"),indent=2)
-        self._write(self._log, f"✔ Report: {txt}", "ok")
-        self._write(self._log, f"✔ JSON:   {jf}", "ok")
-
-
-class MemoryPage(BasePage):
-    NAME = "Memory"
-
-    def __init__(self, parent, app):
-        super().__init__(parent, app)
-        self._stop_mem = threading.Event()
-        self._build()
-
-    def _build(self):
-        top = tk.Frame(self, bg=BG2)
-        top.pack(fill="x")
-        tk.Label(top, text="MEMORY SCANNER", font=("Segoe UI Semibold", 11),
-                 bg=BG2, fg=ACCENT).pack(side="left", padx=20, pady=12)
-        tk.Label(top, text="Scans javaw.exe RAM for cheat signatures",
-                 font=UI, bg=BG2, fg=DIM).pack(side="left", padx=8)
-        self._stop_btn = tk.Button(top, text="■  STOP", font=BOLD, bg=RED, fg="white",
-                                    relief="flat", bd=0, padx=16, pady=6, cursor="hand2",
-                                    state="disabled", command=lambda: self._stop_mem.set())
-        self._stop_btn.pack(side="right", padx=8, pady=10)
-        self._start_btn = tk.Button(top, text="▶  SCAN MEMORY", font=BOLD, bg=ACCENT, fg=BG,
-                                     relief="flat", bd=0, padx=16, pady=6, cursor="hand2",
-                                     command=self._start)
-        self._start_btn.pack(side="right", pady=10)
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
-        self._log = self._log_widget(self)
-        self._log.pack(fill="both", expand=True, padx=10, pady=10)
-
-    def _start(self):
-        if sys.platform != "win32":
-            self._write(self._log, "Memory scanning is Windows-only.", "warning"); return
-        if not HAS_PSUTIL:
-            self._write(self._log, "psutil required. Run from admin CMD.", "critical"); return
-        self._stop_mem.clear()
-        self._start_btn.configure(state="disabled")
-        self._stop_btn.configure(state="normal")
-        self._log.configure(state="normal"); self._log.delete("1.0","end"); self._log.configure(state="disabled")
-        self.app.set_status("Memory scan running...")
-        threading.Thread(target=self._run, daemon=True).start()
-
-    def _run(self):
-        self._write(self._log, f"Memory scan started {datetime.datetime.now().strftime('%H:%M:%S')}", "head")
-        procs = []
-        for p in psutil.process_iter(["pid","name"]):
-            try:
-                if "javaw" in (p.info["name"] or "").lower():
-                    procs.append(p)
-            except (psutil.NoSuchProcess, psutil.AccessDenied): pass
-
-        if not procs:
-            self._write(self._log, "No javaw.exe found — is Minecraft running?", "warning")
-            self.after(0, lambda: (self._start_btn.configure(state="normal"),
-                                   self._stop_btn.configure(state="disabled")))
-            self.app.set_status("Memory scan: no Minecraft found")
+        $javaws = Get-Process -Name "javaw" -ErrorAction SilentlyContinue
+        if (-not $javaws) {
+            Write-Log $MemLog "[WARN] No javaw.exe found — is Minecraft running?"
+            $StartMemBtn.Invoke([Action]{ $StartMemBtn.Enabled = $true })
+            $StopMemBtn.Invoke([Action]{ $StopMemBtn.Enabled = $false })
+            Set-Status "Memory scan: no Minecraft found"
             return
+        }
 
-        MEM_COMMIT = 0x1000
-        PAGE_READ  = {0x02,0x04,0x20,0x40}
-        k32 = ctypes.windll.kernel32
+        $MEM_SIGS = @(
+            "KillAura","killaura","AutoCrystal","autocrystal","Scaffold","scaffold",
+            "Velocity","NoFall","Freecam","ESP","Xray","xray","BHop","Flight","flight",
+            "CrystalAura","BaritoneAPI","baritone.api","agentmain","premain",
+            "ClassFileTransformer","bytebuddy","javassist","aimbot","wallhack",
+            "autoclick","triggerbot","sendPacket","injectPacket","noknockback"
+        )
 
-        class MBI(ctypes.Structure):
-            _fields_ = [
-                ("BaseAddress",ctypes.c_void_p),("AllocationBase",ctypes.c_void_p),
-                ("AllocationProtect",wintypes.DWORD),("RegionSize",ctypes.c_size_t),
-                ("State",wintypes.DWORD),("Protect",wintypes.DWORD),("Type",wintypes.DWORD),
-            ]
+        Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class MemReader {
+    [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint a, bool b, int c);
+    [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h, IntPtr a, byte[] b, int s, out int r);
+    [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll")] public static extern int VirtualQueryEx(IntPtr h, IntPtr a, out MEMORY_BASIC_INFORMATION m, uint s);
+    [StructLayout(LayoutKind.Sequential)] public struct MEMORY_BASIC_INFORMATION {
+        public IntPtr BaseAddress, AllocationBase;
+        public uint AllocationProtect;
+        public IntPtr RegionSize;
+        public uint State, Protect, Type;
+    }
+}
+"@ -ErrorAction SilentlyContinue
 
-        total_hits = 0
-        for proc in procs:
-            self._write(self._log, f"\nScanning PID {proc.pid} ({proc.name()})…", "info")
-            handle = k32.OpenProcess(0x0400 | 0x0010, False, proc.pid)
-            if not handle:
-                self._write(self._log, f"Cannot open PID {proc.pid} — need admin", "warning")
+        $totalHits = 0
+        foreach ($proc in $javaws) {
+            Write-Log $MemLog "Scanning PID $($proc.Id)..."
+            $handle = [MemReader]::OpenProcess(0x0410, $false, $proc.Id)
+            if ($handle -eq [IntPtr]::Zero) {
+                Write-Log $MemLog "[WARN] Cannot open PID $($proc.Id) — need admin"
                 continue
-            hits, addr, scanned = set(), 0, 0
-            while scanned < 512*1024*1024 and not self._stop_mem.is_set():
-                mbi = MBI()
-                if not k32.VirtualQueryEx(handle, ctypes.c_void_p(addr), ctypes.byref(mbi), ctypes.sizeof(mbi)):
-                    break
-                if mbi.State == MEM_COMMIT and mbi.Protect in PAGE_READ and mbi.RegionSize > 0:
-                    buf = (ctypes.c_char * mbi.RegionSize)()
-                    n   = ctypes.c_size_t(0)
-                    if k32.ReadProcessMemory(handle, ctypes.c_void_p(addr), buf, mbi.RegionSize, ctypes.byref(n)):
-                        chunk = bytes(buf[:n.value])
-                        for sig in MEM_SIGS:
-                            if sig in chunk and sig not in hits:
-                                hits.add(sig)
-                                dec = sig.decode("utf-8", errors="replace")
-                                self._write(self._log, f"🔴 HIT: {dec}", "critical")
-                                total_hits += 1
-                    scanned += mbi.RegionSize
-                addr = (addr or 0) + (mbi.RegionSize or 1)
-                if addr >= 0x7FFFFFFFFFFF: break
-            k32.CloseHandle(handle)
-            if not hits: self._write(self._log, f"✔ PID {proc.pid} — Clean", "ok")
-            else: self._write(self._log, f"⚠ PID {proc.pid} — {len(hits)} signature(s) found", "critical")
+            }
+            $addr  = [IntPtr]::Zero
+            $hits  = @{}
+            $scanned = 0
+            $maxScan = 512MB
 
-        self._write(self._log, f"\n── Done — {total_hits} total hit(s) ──", "head")
-        self.app.set_status(f"Memory scan done — {total_hits} hit(s)")
-        self.after(0, lambda: (self._start_btn.configure(state="normal"),
-                               self._stop_btn.configure(state="disabled")))
+            while ($scanned -lt $maxScan -and -not $global:StopMem) {
+                $mbi = New-Object MemReader+MEMORY_BASIC_INFORMATION
+                $ret = [MemReader]::VirtualQueryEx($handle, $addr, [ref]$mbi, [System.Runtime.InteropServices.Marshal]::SizeOf($mbi))
+                if ($ret -eq 0) { break }
+                $size = $mbi.RegionSize.ToInt64()
+                if ($size -le 0) { break }
+                if ($mbi.State -eq 0x1000 -and ($mbi.Protect -eq 0x02 -or $mbi.Protect -eq 0x04 -or $mbi.Protect -eq 0x20 -or $mbi.Protect -eq 0x40)) {
+                    $buf  = New-Object byte[] ([Math]::Min($size, 4MB))
+                    $read = 0
+                    if ([MemReader]::ReadProcessMemory($handle, $mbi.BaseAddress, $buf, $buf.Length, [ref]$read) -and $read -gt 0) {
+                        $str = [System.Text.Encoding]::UTF8.GetString($buf, 0, $read)
+                        foreach ($sig in $MEM_SIGS) {
+                            if (-not $hits[$sig] -and $str.Contains($sig)) {
+                                $hits[$sig] = $true
+                                Write-Log $MemLog "[CRIT] HIT: $sig"
+                                $totalHits++
+                            }
+                        }
+                    }
+                    $scanned += $read
+                }
+                $next = $mbi.BaseAddress.ToInt64() + $size
+                if ($next -ge 0x7FFFFFFFFFFF) { break }
+                $addr = [IntPtr]::new($next)
+            }
+            [MemReader]::CloseHandle($handle) | Out-Null
+            if ($hits.Count -eq 0) { Write-Log $MemLog "✔ PID $($proc.Id) — Clean" }
+            else { Write-Log $MemLog "⚠ PID $($proc.Id) — $($hits.Count) signature(s) found" }
+        }
 
+        Write-Log $MemLog ""
+        Write-Log $MemLog "── Done — $totalHits total hit(s) ──"
+        Set-Status "Memory scan done — $totalHits hit(s)"
+        $StartMemBtn.Invoke([Action]{ $StartMemBtn.Enabled = $true })
+        $StopMemBtn.Invoke([Action]{ $StopMemBtn.Enabled = $false })
+    })
+    $job.IsBackground = $true
+    $job.Start()
+})
 
-class SysInfoPage(BasePage):
-    NAME = "Sys Info"
+# ── TAB: SYS INFO ──────────────────────────────────────────────────────────────
+$TabSysInfo = New-Object System.Windows.Forms.TabPage
+$TabSysInfo.Text      = "  🖥  Sys Info  "
+$TabSysInfo.BackColor = $BG
+$Tabs.TabPages.Add($TabSysInfo)
 
-    def __init__(self, parent, app):
-        super().__init__(parent, app)
-        self._build()
+$SysTopPanel = New-Object System.Windows.Forms.Panel
+$SysTopPanel.Dock      = "Top"
+$SysTopPanel.Height    = 48
+$SysTopPanel.BackColor = $BG2
+$TabSysInfo.Controls.Add($SysTopPanel)
 
-    def _build(self):
-        top = tk.Frame(self, bg=BG2)
-        top.pack(fill="x")
-        tk.Label(top, text="SYSTEM INFO", font=("Segoe UI Semibold", 11),
-                 bg=BG2, fg=ACCENT).pack(side="left", padx=20, pady=12)
-        tk.Button(top, text="▶  RUN CHECKS", font=BOLD, bg=ORANGE, fg=BG,
-                  relief="flat", bd=0, padx=16, pady=6, cursor="hand2",
-                  command=self._start).pack(side="right", padx=10, pady=10)
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
+$SysTopPanel.Controls.Add((New-Label "SYSTEM INFO" 16 12 300 26 $ACCENT $BG2 $FONT_BOLD))
 
-        cards = tk.Frame(self, bg=BG)
-        cards.pack(fill="x", padx=16, pady=12)
+$RunSysBtn = New-Button "▶  RUN CHECKS" 820 10 140 28 $ORANGE $BG
+$SysTopPanel.Controls.Add($RunSysBtn)
 
-        self._uptime_var = tk.StringVar(value="—")
-        self._hwid_var   = tk.StringVar(value="—")
+$UptimePanel = New-Object System.Windows.Forms.Panel
+$UptimePanel.Location  = New-Object System.Drawing.Point(8, 56)
+$UptimePanel.Size      = New-Object System.Drawing.Size(400, 60)
+$UptimePanel.BackColor = $BG3
+$TabSysInfo.Controls.Add($UptimePanel)
+$UptimePanel.Controls.Add((New-Label "⏱  MC UPTIME" 12 6 200 16 $DIM $BG3 $FONT_TINY))
+$UptimeVal = New-Label "—" 12 24 380 28 $TEXT $BG3 $FONT_BOLD
+$UptimePanel.Controls.Add($UptimeVal)
 
-        for label, var in [("⏱  MC Uptime", self._uptime_var)]:
-            c = tk.Frame(cards, bg=BG3, padx=14, pady=10, bd=0,
-                         highlightthickness=1, highlightbackground=BORDER)
-            c.pack(side="left", fill="both", expand=True, padx=(0,8))
-            tk.Label(c, text=label, font=("Consolas", 8), bg=BG3, fg=DIM).pack(anchor="w")
-            tk.Label(c, textvariable=var, font=("Segoe UI Semibold", 13),
-                     bg=BG3, fg=TEXT, wraplength=260, justify="left").pack(anchor="w", pady=(4,0))
+$HwidPanel = New-Object System.Windows.Forms.Panel
+$HwidPanel.Location  = New-Object System.Drawing.Point(8, 124)
+$HwidPanel.Size      = New-Object System.Drawing.Size(1050, 60)
+$HwidPanel.BackColor = $BG3
+$TabSysInfo.Controls.Add($HwidPanel)
+$HwidPanel.Controls.Add((New-Label "🖥  HWID" 12 6 200 16 $DIM $BG3 $FONT_TINY))
+$HwidVal = New-Label "—" 12 24 1020 28 $ACCENT $BG3 $FONT_MONO
+$HwidPanel.Controls.Add($HwidVal)
 
-        hwid_f = tk.Frame(self, bg=BG3, padx=16, pady=12, bd=0,
-                          highlightthickness=1, highlightbackground=BORDER)
-        hwid_f.pack(fill="x", padx=16, pady=(0,8))
-        tk.Label(hwid_f, text="🖥  HWID", font=("Consolas", 8), bg=BG3, fg=DIM).pack(anchor="w")
-        tk.Label(hwid_f, textvariable=self._hwid_var, font=MONO,
-                 bg=BG3, fg=ACCENT, wraplength=900, justify="left").pack(anchor="w", pady=(4,0))
+$SysLog = New-TextBox 8 194 0 0 $true
+$SysLog.Anchor    = "Top,Bottom,Left,Right"
+$SysLog.Size      = New-Object System.Drawing.Size(1066, 420)
+$SysLog.BackColor = $BG
+$SysLog.ForeColor = $TEXT
+$TabSysInfo.Controls.Add($SysLog)
 
-        tk.Frame(self, bg=BORDER, height=1).pack(fill="x")
-        self._log = self._log_widget(self)
-        self._log.pack(fill="both", expand=True, padx=10, pady=10)
+$RunSysBtn.Add_Click({
+    $SysLog.Clear()
+    $UptimeVal.Text = "Checking..."
+    $HwidVal.Text   = "Generating..."
+    Set-Status "Running sys info checks..."
 
-    def _start(self):
-        self._log.configure(state="normal"); self._log.delete("1.0","end"); self._log.configure(state="disabled")
-        self._uptime_var.set("Checking…")
-        self._hwid_var.set("Generating…")
-        threading.Thread(target=self._run, daemon=True).start()
+    $job = [System.Threading.Thread]::new({
+        Write-Log $SysLog "Checks started  $(Get-Date -Format 'HH:mm:ss')"
+        Write-Log $SysLog "Host: $env:COMPUTERNAME   User: $env:USERNAME"
+        Write-Log $SysLog ""
 
-    def _run(self):
-        self._write(self._log, f"Checks started {datetime.datetime.now().strftime('%H:%M:%S')}", "head")
-        self._write(self._log, f"Host: {os.environ.get('COMPUTERNAME','?')}  User: {os.environ.get('USERNAME','?')}", "dim")
+        Write-Log $SysLog "── MC Uptime ───────────────────────────────"
+        $javaw = Get-Process -Name "javaw" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($javaw) {
+            $started = $javaw.StartTime
+            $elapsed = (Get-Date) - $started
+            $upStr   = "$($elapsed.Hours)h $($elapsed.Minutes)m $($elapsed.Seconds)s"
+            $UptimeVal.Invoke([Action]{ $UptimeVal.Text = "PID $($javaw.Id) — $upStr (started $($started.ToString('HH:mm:ss')))" })
+            Write-Log $SysLog "✔ javaw PID $($javaw.Id) — running $upStr"
+        } else {
+            $UptimeVal.Invoke([Action]{ $UptimeVal.Text = "Not running" })
+            Write-Log $SysLog "[WARN] No Minecraft process found"
+        }
 
-        self._write(self._log, "\n── Minecraft Uptime ──", "head")
-        uptime_str = "Not running"
-        if HAS_PSUTIL:
-            for p in psutil.process_iter(["pid","name","create_time"]):
-                try:
-                    if "javaw" in (p.info["name"] or "").lower():
-                        ct = datetime.datetime.fromtimestamp(p.info["create_time"])
-                        el = datetime.datetime.now() - ct
-                        h = int(el.total_seconds()//3600)
-                        m = int((el.total_seconds()%3600)//60)
-                        s = int(el.total_seconds()%60)
-                        uptime_str = f"PID {p.pid} — {h}h {m}m {s}s"
-                        self._write(self._log, f"✔ {p.info['name']} started {ct.strftime('%H:%M:%S')} — up {h}h {m}m {s}s", "ok")
-                        break
-                except (psutil.NoSuchProcess, psutil.AccessDenied): pass
-        if uptime_str == "Not running":
-            self._write(self._log, "No Minecraft process found", "warning")
-        self._uptime_var.set(uptime_str)
+        Write-Log $SysLog ""
+        Write-Log $SysLog "── HWID ────────────────────────────────────"
+        try {
+            $mb   = (Get-WmiObject win32_baseboard).Manufacturer + " " + (Get-WmiObject win32_baseboard).SerialNumber
+            $cpu  = (Get-WmiObject Win32_Processor).Name
+            $disk = (Get-PhysicalDisk | Select-Object -First 1).SerialNumber
+            $raw  = "$mb|$cpu|$disk"
+            $bytes= [System.Text.Encoding]::UTF8.GetBytes($raw)
+            $hwid = [Convert]::ToBase64String($bytes).Replace("=","")
+            $HwidVal.Invoke([Action]{ $HwidVal.Text = $hwid })
+            Write-Log $SysLog "✔ HWID generated"
+            Write-Log $SysLog $hwid
+        } catch {
+            $HwidVal.Invoke([Action]{ $HwidVal.Text = "Error: $_" })
+            Write-Log $SysLog "[WARN] HWID failed: $_"
+        }
 
-        self._write(self._log, "\n── HWID ──", "head")
-        try:
-            hwid = self._gen_hwid()
-            self._hwid_var.set(hwid)
-            self._write(self._log, "✔ HWID generated", "ok")
-            self._write(self._log, hwid, "dim")
-        except Exception as e:
-            self._hwid_var.set(f"Error: {e}")
-            self._write(self._log, f"HWID failed: {e}", "warning")
+        Write-Log $SysLog ""
+        Write-Log $SysLog "✔ All checks complete"
+        Set-Status "Sys info checks complete"
+    })
+    $job.IsBackground = $true
+    $job.Start()
+})
 
-        self._write(self._log, "\n✔ All checks done", "ok")
-        self.app.set_status("Sys info checks complete")
-
-    def _gen_hwid(self):
-        if sys.platform != "win32": return "Windows-only"
-        def wq(q):
-            r = subprocess.run(["powershell","-Command",q], capture_output=True, text=True, timeout=8)
-            return r.stdout.strip()
-        mb   = wq("(Get-WmiObject win32_baseboard).Manufacturer+' '+(Get-WmiObject win32_baseboard).SerialNumber")
-        cpu  = wq("(Get-WmiObject Win32_Processor).Name")
-        disk = wq("(Get-PhysicalDisk | Select-Object -First 1).SerialNumber")
-        raw  = f"{mb}|{cpu}|{disk}"
-        return base64.b64encode(raw.encode()).decode().replace("=","")
-
-
-if __name__ == "__main__":
-    if sys.platform == "win32" and not is_admin():
-        ctypes.windll.shell32.ShellExecuteW(None,"runas",sys.executable," ".join(sys.argv),None,1)
-        sys.exit(0)
-    App().mainloop()
+[System.Windows.Forms.Application]::Run($Form)
