@@ -19,12 +19,13 @@ $cDIM    = [System.Drawing.ColorTranslator]::FromHtml("#4a5568")
 $cBORDER = [System.Drawing.ColorTranslator]::FromHtml("#1e2535")
 $cWHITE  = [System.Drawing.Color]::White
 
-$fUI   = New-Object System.Drawing.Font("Segoe UI", 10)
-$fBold = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-$fMono = New-Object System.Drawing.Font("Consolas", 9)
-$fHead = New-Object System.Drawing.Font("Segoe UI", 18, [System.Drawing.FontStyle]::Bold)
-$fSub  = New-Object System.Drawing.Font("Segoe UI", 11)
-$fTiny = New-Object System.Drawing.Font("Consolas", 8)
+$fBold  = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+$fMono  = New-Object System.Drawing.Font("Consolas", 10)
+$fHead  = New-Object System.Drawing.Font("Segoe UI", 22, [System.Drawing.FontStyle]::Bold)
+$fSub   = New-Object System.Drawing.Font("Segoe UI", 12)
+$fTiny  = New-Object System.Drawing.Font("Consolas", 9)
+$fBtn   = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
+$fLabel = New-Object System.Drawing.Font("Segoe UI", 10)
 
 $cheatStrings = @(
     "AimAssist","AnchorTweaks","AutoAnchor","AutoCrystal","AutoDoubleHand",
@@ -51,16 +52,14 @@ $SI_PATHS = @(
     "$env:ProgramFiles\SystemInformer\SystemInformer.exe",
     "${env:ProgramFiles(x86)}\SystemInformer\SystemInformer.exe",
     "$env:ProgramFiles\Process Hacker 2\ProcessHacker.exe",
-    "${env:ProgramFiles(x86)}\Process Hacker 2\ProcessHacker.exe",
-    "C:\Tools\SystemInformer\SystemInformer.exe",
-    "C:\Tools\ProcessHacker\ProcessHacker.exe"
+    "${env:ProgramFiles(x86)}\Process Hacker 2\ProcessHacker.exe"
 )
 
 $global:McFolder  = ""
 $global:OutFolder = ""
 $global:StopAll   = $false
 
-function New-Lbl($txt,$x,$y,$w,$h,$fg,$bg,$font=$fUI,$align="MiddleLeft") {
+function New-Lbl($txt,$x,$y,$w,$h,$fg,$bg,$font=$fLabel,$align="MiddleLeft") {
     $l = New-Object System.Windows.Forms.Label
     $l.Text=$txt; $l.Location=New-Object System.Drawing.Point($x,$y)
     $l.Size=New-Object System.Drawing.Size($w,$h)
@@ -68,12 +67,12 @@ function New-Lbl($txt,$x,$y,$w,$h,$fg,$bg,$font=$fUI,$align="MiddleLeft") {
     $l.TextAlign=[System.Drawing.ContentAlignment]::$align
     return $l
 }
-function New-Btn($txt,$x,$y,$w,$h,$bg,$fg) {
+function New-Btn($txt,$x,$y,$w,$h,$bg,$fg,$font=$fBtn) {
     $b = New-Object System.Windows.Forms.Button
     $b.Text=$txt; $b.Location=New-Object System.Drawing.Point($x,$y)
     $b.Size=New-Object System.Drawing.Size($w,$h)
     $b.BackColor=$bg; $b.ForeColor=$fg; $b.FlatStyle="Flat"
-    $b.FlatAppearance.BorderSize=0; $b.Font=$fBold; $b.Cursor="Hand"
+    $b.FlatAppearance.BorderSize=0; $b.Font=$font; $b.Cursor="Hand"
     return $b
 }
 function Log($box,$txt) {
@@ -85,9 +84,9 @@ function Browse-Folder($title) {
     $folder = $shell.BrowseForFolder(0,$title,0,0)
     if ($folder) { return $folder.Self.Path } else { return $null }
 }
-function Get-SHA1($filePath) { return (Get-FileHash -Path $filePath -Algorithm SHA1).Hash }
-function Get-ZoneId($filePath) {
-    $ads = Get-Content -Raw -Stream Zone.Identifier $filePath -ErrorAction SilentlyContinue
+function Get-SHA1($fp) { return (Get-FileHash -Path $fp -Algorithm SHA1).Hash }
+function Get-ZoneId($fp) {
+    $ads = Get-Content -Raw -Stream Zone.Identifier $fp -ErrorAction SilentlyContinue
     if ($ads -match "HostUrl=(.+)") { return $matches[1].Trim() }
     return $null
 }
@@ -108,45 +107,51 @@ function Fetch-Megabase($hash) {
     } catch {}
     return $null
 }
-function Check-CheatStrings($filePath) {
+function Check-CheatStrings($fp) {
     $found = [System.Collections.Generic.HashSet[string]]::new()
-    $content = Get-Content -Raw $filePath -ErrorAction SilentlyContinue
+    $content = Get-Content -Raw $fp -ErrorAction SilentlyContinue
     if (-not $content) { return $found }
     foreach ($s in $cheatStrings) { if ($content -match $s) { $found.Add($s) | Out-Null } }
     return $found
 }
 
 $Form = New-Object System.Windows.Forms.Form
-$Form.Text = "SS Tool"
-$Form.Size = New-Object System.Drawing.Size(700,500)
-$Form.MinimumSize = New-Object System.Drawing.Size(700,500)
-$Form.MaximumSize = New-Object System.Drawing.Size(700,500)
+$Form.Text = "SS Tool  //  MC Cheat Scanner"
+$Form.Size = New-Object System.Drawing.Size(1100,750)
+$Form.MinimumSize = New-Object System.Drawing.Size(1100,750)
 $Form.BackColor = $cBG
 $Form.StartPosition = "CenterScreen"
-$Form.FormBorderStyle = "FixedSingle"
-$Form.MaximizeBox = $false
+$Form.FormBorderStyle = "Sizable"
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")
+$adminTxt   = if ($isAdmin) { "  ADMIN" } else { "  NOT ADMIN" }
+$adminColor = if ($isAdmin) { $cGREEN } else { $cRED }
 
 $Header = New-Object System.Windows.Forms.Panel
-$Header.Dock = "Top"; $Header.Height = 52; $Header.BackColor = $cBG2
-$Header.Controls.Add((New-Lbl "SS TOOL" 20 12 400 28 $cACCENT $cBG2 $fHead))
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")
-$adminTxt   = if ($isAdmin) { "[ADMIN]" } else { "[NOT ADMIN]" }
-$adminColor = if ($isAdmin) { $cGREEN } else { $cRED }
-$Header.Controls.Add((New-Lbl $adminTxt 580 18 100 18 $adminColor $cBG2 $fTiny "MiddleRight"))
+$Header.Dock = "Top"; $Header.Height = 70; $Header.BackColor = $cBG2
+$Header.Controls.Add((New-Lbl "SS TOOL" 24 10 400 50 $cACCENT $cBG2 $fHead))
+$Header.Controls.Add((New-Lbl "MC Cheat Scanner" 24 46 400 22 $cDIM $cBG2 $fTiny))
+$Header.Controls.Add((New-Lbl $adminTxt 900 24 180 24 $adminColor $cBG2 $fBold "MiddleRight"))
 $Form.Controls.Add($Header)
 
-$Divider = New-Object System.Windows.Forms.Panel
-$Divider.Dock = "Top"; $Divider.Height = 2; $Divider.BackColor = $cACCENT
-$Form.Controls.Add($Divider)
+$AccentLine = New-Object System.Windows.Forms.Panel
+$AccentLine.Dock = "Top"; $AccentLine.Height = 3; $AccentLine.BackColor = $cACCENT
+$Form.Controls.Add($AccentLine)
 
 $Pages = @{}
 $Container = New-Object System.Windows.Forms.Panel
 $Container.Dock = "Fill"; $Container.BackColor = $cBG
 $Form.Controls.Add($Container)
 
-function Show-Page($name) {
-    foreach ($p in $Pages.Values) { $p.Visible = $false }
-    $Pages[$name].Visible = $true
+$StatusBar = New-Object System.Windows.Forms.Panel
+$StatusBar.Dock = "Bottom"; $StatusBar.Height = 28; $StatusBar.BackColor = $cBG2
+$StatusLbl = New-Lbl "Ready" 12 5 900 20 $cDIM $cBG2 $fTiny
+$StatusBar.Controls.Add($StatusLbl)
+$Form.Controls.Add($StatusBar)
+
+function Set-Status($msg) {
+    if ($StatusLbl.InvokeRequired) { $StatusLbl.Invoke([Action]{ $StatusLbl.Text = $msg }) }
+    else { $StatusLbl.Text = $msg }
 }
 
 foreach ($name in @("Mods","Output","Scan")) {
@@ -156,202 +161,201 @@ foreach ($name in @("Mods","Output","Scan")) {
     $Pages[$name] = $p
 }
 
+function Show-Page($name) {
+    foreach ($p in $Pages.Values) { $p.Visible = $false }
+    $Pages[$name].Visible = $true
+}
+
 $pMods   = $Pages["Mods"]
 $pOutput = $Pages["Output"]
 $pScan   = $Pages["Scan"]
 
-$stepLbl = New-Object System.Windows.Forms.Label
-$stepLbl.Size = New-Object System.Drawing.Size(700,24)
-$stepLbl.Location = New-Object System.Drawing.Point(0,0)
-$stepLbl.BackColor = $cBG3
-$stepLbl.ForeColor = $cDIM
-$stepLbl.Font = $fTiny
-$stepLbl.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-$Header.Controls.Add($stepLbl)
-
-function Set-Step($n,$txt) {
-    $stepLbl.Text = "Step $n of 3  --  $txt"
+function New-StepDots($parent,$active) {
+    $dots = New-Object System.Windows.Forms.Panel
+    $dots.Size = New-Object System.Drawing.Size(120,16)
+    $dots.Location = New-Object System.Drawing.Point(490,580)
+    $dots.BackColor = $cBG
+    for ($i = 1; $i -le 3; $i++) {
+        $d = New-Object System.Windows.Forms.Panel
+        $d.Size = New-Object System.Drawing.Size(28,8)
+        $d.Location = New-Object System.Drawing.Point((($i-1)*38),4)
+        $d.BackColor = if ($i -eq $active) { $cACCENT } else { $cBG3 }
+        $dots.Controls.Add($d)
+    }
+    $parent.Controls.Add($dots)
 }
 
-$pMods.Controls.Add((New-Lbl "Select Minecraft Mods Folder" 50 60 600 36 $cACCENT $cBG $fHead "MiddleCenter"))
-$pMods.Controls.Add((New-Lbl "Choose the folder where your Minecraft mods are stored." 50 104 600 24 $cDIM $cBG $fSub "MiddleCenter"))
+function MakeFolderPage($page,$title,$subtitle,$defaultPath,$active) {
+    $page.Controls.Add((New-Lbl $title 80 100 940 54 $cACCENT $cBG $fHead "MiddleCenter"))
+    $page.Controls.Add((New-Lbl $subtitle 80 158 940 30 $cDIM $cBG $fSub "MiddleCenter"))
 
-$mcPathBox = New-Object System.Windows.Forms.TextBox
-$mcPathBox.Location = New-Object System.Drawing.Point(50,160)
-$mcPathBox.Size = New-Object System.Drawing.Size(490,32)
-$mcPathBox.BackColor = $cBG3; $mcPathBox.ForeColor = $cTEXT
-$mcPathBox.BorderStyle = "None"; $mcPathBox.Font = $fMono
-$mcPathBox.Text = "$env:USERPROFILE\AppData\Roaming\.minecraft\mods"
-$pMods.Controls.Add($mcPathBox)
+    $pathBox = New-Object System.Windows.Forms.TextBox
+    $pathBox.Location = New-Object System.Drawing.Point(80,230)
+    $pathBox.Size = New-Object System.Drawing.Size(720,40)
+    $pathBox.BackColor = $cBG3; $pathBox.ForeColor = $cTEXT
+    $pathBox.BorderStyle = "None"; $pathBox.Font = $fMono
+    $pathBox.Text = $defaultPath
+    $page.Controls.Add($pathBox)
 
-$mcBrowseBtn = New-Btn "Browse" 550 158 100 34 $cACCENT $cBG
-$mcBrowseBtn.Add_Click({
-    $p = Browse-Folder "Select your Minecraft mods folder"
+    $browseBtn = New-Btn "Browse" 814 228 180 44 $cACCENT $cBG $fBold
+    $page.Controls.Add($browseBtn)
+
+    $errLbl = New-Lbl "" 80 282 940 26 $cRED $cBG $fTiny "MiddleCenter"
+    $page.Controls.Add($errLbl)
+
+    New-StepDots $page $active
+
+    return $pathBox,$browseBtn,$errLbl
+}
+
+$mcPathBox,$mcBrowse,$mcErr = MakeFolderPage $pMods "Select Mods Folder" "Choose the folder where your Minecraft mods are stored." "$env:USERPROFILE\AppData\Roaming\.minecraft\mods" 1
+$mcBrowse.Add_Click({
+    $p = Browse-Folder "Select Minecraft mods folder"
     if ($p) { $mcPathBox.Text = $p }
 })
-$pMods.Controls.Add($mcBrowseBtn)
 
-$mcErrorLbl = New-Lbl "" 50 200 600 22 $cRED $cBG $fTiny "MiddleCenter"
-$pMods.Controls.Add($mcErrorLbl)
+$pMods.Controls.Add((New-Lbl "The scanner will check all .jar files inside this folder against Modrinth, Megabase and cheat string databases." 80 316 940 22 $cDIM $cBG $fTiny "MiddleCenter"))
 
-$mcNextBtn = New-Btn "Next  >" 550 340 100 40 $cGREEN $cBG
+$mcNextBtn = New-Btn "Next  >" 820 500 180 54 $cGREEN $cBG
+$pMods.Controls.Add($mcNextBtn)
 $mcNextBtn.Add_Click({
     $p = $mcPathBox.Text.Trim()
     if (-not $p -or -not (Test-Path $p -PathType Container)) {
-        $mcErrorLbl.Text = "Invalid folder path. Please browse and select a valid folder."
+        $mcErr.Text = "  Invalid path — please browse and select a valid folder."
         return
     }
     $global:McFolder = $p
-    $mcErrorLbl.Text = ""
+    $mcErr.Text = ""
     Show-Page "Output"
 })
-$pMods.Controls.Add($mcNextBtn)
 
-$pMods.Controls.Add((New-Lbl "Selected folder will be scanned for .jar files." 50 240 600 20 $cDIM $cBG $fTiny "MiddleCenter"))
-
-$pOutput.Controls.Add((New-Lbl "Select Output / Report Folder" 50 60 600 36 $cACCENT $cBG $fHead "MiddleCenter"))
-$pOutput.Controls.Add((New-Lbl "Scan reports will be saved here after the scan finishes." 50 104 600 24 $cDIM $cBG $fSub "MiddleCenter"))
-
-$outPathBox = New-Object System.Windows.Forms.TextBox
-$outPathBox.Location = New-Object System.Drawing.Point(50,160)
-$outPathBox.Size = New-Object System.Drawing.Size(490,32)
-$outPathBox.BackColor = $cBG3; $outPathBox.ForeColor = $cTEXT
-$outPathBox.BorderStyle = "None"; $outPathBox.Font = $fMono
-$outPathBox.Text = "$env:USERPROFILE\Desktop"
-$pOutput.Controls.Add($outPathBox)
-
-$outBrowseBtn = New-Btn "Browse" 550 158 100 34 $cACCENT $cBG
-$outBrowseBtn.Add_Click({
+$outPathBox,$outBrowse,$outErr = MakeFolderPage $pOutput "Select Output Folder" "Scan reports will be saved here when the scan finishes." "$env:USERPROFILE\Desktop" 2
+$outBrowse.Add_Click({
     $p = Browse-Folder "Select output folder for reports"
     if ($p) { $outPathBox.Text = $p }
 })
-$pOutput.Controls.Add($outBrowseBtn)
 
-$outErrorLbl = New-Lbl "" 50 200 600 22 $cRED $cBG $fTiny "MiddleCenter"
-$pOutput.Controls.Add($outErrorLbl)
+$pOutput.Controls.Add((New-Lbl "Reports are saved as .txt files with a date/time stamp." 80 316 940 22 $cDIM $cBG $fTiny "MiddleCenter"))
 
-$outBackBtn = New-Btn "< Back" 50 340 100 40 $cBG3 $cDIM
-$outBackBtn.Add_Click({ Show-Page "Mods" })
+$outBackBtn = New-Btn "< Back" 80 500 160 54 $cBG3 $cDIM
 $pOutput.Controls.Add($outBackBtn)
+$outBackBtn.Add_Click({ Show-Page "Mods" })
 
-$outNextBtn = New-Btn "Next  >" 550 340 100 40 $cGREEN $cBG
+$outNextBtn = New-Btn "Next  >" 820 500 180 54 $cGREEN $cBG
+$pOutput.Controls.Add($outNextBtn)
 $outNextBtn.Add_Click({
     $p = $outPathBox.Text.Trim()
     if (-not $p -or -not (Test-Path $p -PathType Container)) {
-        $outErrorLbl.Text = "Invalid folder path. Please browse and select a valid folder."
+        $outErr.Text = "  Invalid path — please browse and select a valid folder."
         return
     }
     $global:OutFolder = $p
-    $outErrorLbl.Text = ""
+    $outErr.Text = ""
     Show-Page "Scan"
 })
-$pOutput.Controls.Add($outNextBtn)
-
-$pOutput.Controls.Add((New-Lbl "Reports are saved as .txt files with a timestamp." 50 240 600 20 $cDIM $cBG $fTiny "MiddleCenter"))
 
 $scanTopBar = New-Object System.Windows.Forms.Panel
-$scanTopBar.Dock = "Top"; $scanTopBar.Height = 44; $scanTopBar.BackColor = $cBG2
+$scanTopBar.Dock = "Top"; $scanTopBar.Height = 72; $scanTopBar.BackColor = $cBG2
 $pScan.Controls.Add($scanTopBar)
 
-$startBtn = New-Btn "> RUN ALL SCANS" 10 6 180 32 $cGREEN $cBG
-$scanTopBar.Controls.Add($startBtn)
+$runBtn = New-Btn ">  RUN ALL SCANS" 12 12 260 50 $cGREEN $cBG
+$scanTopBar.Controls.Add($runBtn)
 
-$stopBtn = New-Btn "STOP" 10 6 180 32 $cRED $cWHITE
-$stopBtn.Visible = $false; $stopBtn.Enabled = $false
-$scanTopBar.Controls.Add($stopBtn)
-$stopBtn.Add_Click({ $global:StopAll = $true })
+$stopBtn2 = New-Btn "STOP" 12 12 260 50 $cRED $cWHITE
+$stopBtn2.Visible = $false; $stopBtn2.Enabled = $false
+$scanTopBar.Controls.Add($stopBtn2)
+$stopBtn2.Add_Click({ $global:StopAll = $true })
 
-$backBtn2 = New-Btn "< Back" 560 6 120 32 $cBG3 $cDIM
-$backBtn2.Add_Click({
-    if ($startBtn.Visible) { Show-Page "Output" }
-})
-$scanTopBar.Controls.Add($backBtn2)
+$backBtn = New-Btn "< Back" 284 12 140 50 $cBG3 $cDIM $fBold
+$scanTopBar.Controls.Add($backBtn)
+$backBtn.Add_Click({ Show-Page "Output" })
 
 $progBar = New-Object System.Windows.Forms.ProgressBar
-$progBar.Dock = "Top"; $progBar.Height = 5
+$progBar.Dock = "Top"; $progBar.Height = 8
 $progBar.Style = "Continuous"; $progBar.ForeColor = $cACCENT; $progBar.BackColor = $cBG2
 $pScan.Controls.Add($progBar)
 
-$scanSplit = New-Object System.Windows.Forms.SplitContainer
-$scanSplit.Dock = "Fill"; $scanSplit.SplitterDistance = 320
-$scanSplit.BackColor = $cBORDER
-$scanSplit.Panel1.BackColor = $cBG
-$scanSplit.Panel2.BackColor = $cBG
-$pScan.Controls.Add($scanSplit)
-
-$scanSplit.Panel1.Controls.Add((New-Lbl "RESULTS" 8 6 200 16 $cDIM $cBG $fTiny))
-
-function New-ResultPanel2($title,$color,$top) {
-    $p = New-Object System.Windows.Forms.Panel
-    $p.Location = New-Object System.Drawing.Point(6,$top)
-    $p.Size = New-Object System.Drawing.Size(302,120)
-    $p.BackColor = $cBG2
-    $hdr = New-Object System.Windows.Forms.Panel
-    $hdr.Dock = "Top"; $hdr.Height = 24; $hdr.BackColor = $color
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = $title; $lbl.Dock = "Fill"
-    $lbl.ForeColor = $cBG; $lbl.Font = $fBold
-    $lbl.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-    $lbl.Padding = New-Object System.Windows.Forms.Padding(6,0,0,0)
-    $hdr.Controls.Add($lbl)
-    $p.Controls.Add($hdr)
-    $box = New-Object System.Windows.Forms.ListBox
-    $box.Location = New-Object System.Drawing.Point(0,24)
-    $box.Size = New-Object System.Drawing.Size(302,96)
-    $box.BackColor = $cBG2; $box.ForeColor = $cTEXT
-    $box.BorderStyle = "None"; $box.Font = $fTiny
-    $p.Controls.Add($box)
-    return $p,$box
-}
-
-$ty = 26
-$modPanel,$modBox  = New-ResultPanel2 "MOD ANALYZER" $cGREEN  $ty; $ty += 126
-$memPanel,$memBox  = New-ResultPanel2 "MEMORY SCAN"  $cACCENT $ty; $ty += 126
-$sysPanel,$sysBox  = New-ResultPanel2 "SYS INFO"     $cORANGE $ty; $ty += 126
-$siPanel,$siBox    = New-ResultPanel2 "SI DEEP SCAN" $cRED    $ty; $ty += 126
-$scanSplit.Panel1.Controls.AddRange(@($modPanel,$memPanel,$sysPanel,$siPanel))
-
-$sumPanel = New-Object System.Windows.Forms.Panel
-$sumPanel.Location = New-Object System.Drawing.Point(6,$ty)
-$sumPanel.Size = New-Object System.Drawing.Size(302,48)
-$sumPanel.BackColor = $cBG3
-$okLbl    = New-Lbl "OK: --"    8  4 90 18 $cGREEN  $cBG3 $fBold
-$unkLbl   = New-Lbl "UNK: --"  100  4 90 18 $cORANGE $cBG3 $fBold
-$cheatLbl = New-Lbl "CHEAT: --" 192  4 110 18 $cRED    $cBG3 $fBold
-$memLbl   = New-Lbl "MEM: --"    8 26 90 18 $cACCENT $cBG3 $fBold
-$siLbl    = New-Lbl "SI: --"   100 26 90 18 $cRED    $cBG3 $fBold
-$sumPanel.Controls.AddRange(@($okLbl,$unkLbl,$cheatLbl,$memLbl,$siLbl))
-$scanSplit.Panel1.Controls.Add($sumPanel)
-
-$scanSplit.Panel2.Controls.Add((New-Lbl "LIVE LOG" 8 6 200 16 $cDIM $cBG $fTiny))
-$liveLog = New-Object System.Windows.Forms.TextBox
-$liveLog.Location = New-Object System.Drawing.Point(6,26)
-$liveLog.Dock = "Fill"
-$liveLog.BackColor = $cBG; $liveLog.ForeColor = $cTEXT
-$liveLog.BorderStyle = "None"; $liveLog.Font = New-Object System.Drawing.Font("Consolas",8)
-$liveLog.Multiline = $true; $liveLog.ScrollBars = "Vertical"
-$liveLog.ReadOnly = $true; $liveLog.WordWrap = $true
-$scanSplit.Panel2.Controls.Add($liveLog)
-
-$statusBar = New-Object System.Windows.Forms.Panel
-$statusBar.Dock = "Bottom"; $statusBar.Height = 22; $statusBar.BackColor = $cBG2
-$statusLbl = New-Lbl "Ready" 8 3 680 16 $cDIM $cBG2 $fTiny
-$statusBar.Controls.Add($statusLbl)
-$Form.Controls.Add($statusBar)
-
-function Set-Status($msg) {
-    if ($statusLbl.InvokeRequired) { $statusLbl.Invoke([Action]{ $statusLbl.Text = $msg }) }
-    else { $statusLbl.Text = $msg }
-}
 function Set-Prog($val) {
     if ($progBar.InvokeRequired) { $progBar.Invoke([Action]{ $progBar.Value = [Math]::Min($val,100) }) }
     else { $progBar.Value = [Math]::Min($val,100) }
 }
 
-$startBtn.Add_Click({
+$scanSplit = New-Object System.Windows.Forms.SplitContainer
+$scanSplit.Dock = "Fill"; $scanSplit.SplitterDistance = 420
+$scanSplit.BackColor = $cBORDER
+$scanSplit.Panel1.BackColor = $cBG
+$scanSplit.Panel2.BackColor = $cBG
+$pScan.Controls.Add($scanSplit)
+
+$scanSplit.Panel1.Controls.Add((New-Lbl "  RESULTS" 0 0 420 28 $cACCENT $cBG2 $fBold))
+
+$leftScroll = New-Object System.Windows.Forms.Panel
+$leftScroll.Location = New-Object System.Drawing.Point(0,30)
+$leftScroll.Size = New-Object System.Drawing.Size(418,560)
+$leftScroll.BackColor = $cBG
+$leftScroll.AutoScroll = $true
+$scanSplit.Panel1.Controls.Add($leftScroll)
+
+function New-ResPanel($title,$color,$top) {
+    $outer = New-Object System.Windows.Forms.Panel
+    $outer.Location = New-Object System.Drawing.Point(6,$top)
+    $outer.Size = New-Object System.Drawing.Size(400,150)
+    $outer.BackColor = $cBG2
+
+    $hdr = New-Object System.Windows.Forms.Panel
+    $hdr.Dock = "Top"; $hdr.Height = 32; $hdr.BackColor = $color
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "  $title"; $lbl.Dock = "Fill"
+    $lbl.ForeColor = $cBG; $lbl.Font = $fBold
+    $lbl.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    $hdr.Controls.Add($lbl)
+    $outer.Controls.Add($hdr)
+
+    $box = New-Object System.Windows.Forms.ListBox
+    $box.Location = New-Object System.Drawing.Point(0,32)
+    $box.Size = New-Object System.Drawing.Size(400,118)
+    $box.BackColor = $cBG2; $box.ForeColor = $cTEXT
+    $box.BorderStyle = "None"; $box.Font = $fTiny
+    $outer.Controls.Add($box)
+
+    return $outer,$box
+}
+
+$ty = 6
+$modPanel,$modBox = New-ResPanel "MOD ANALYZER"  $cGREEN  $ty; $ty += 158
+$memPanel,$memBox = New-ResPanel "MEMORY SCAN"   $cACCENT $ty; $ty += 158
+$sysPanel,$sysBox = New-ResPanel "SYS INFO"      $cORANGE $ty; $ty += 158
+$siPanel,$siBox   = New-ResPanel "SI DEEP SCAN"  $cRED    $ty; $ty += 158
+$leftScroll.Controls.AddRange(@($modPanel,$memPanel,$sysPanel,$siPanel))
+
+$sumPanel = New-Object System.Windows.Forms.Panel
+$sumPanel.Location = New-Object System.Drawing.Point(6,$ty)
+$sumPanel.Size = New-Object System.Drawing.Size(400,58)
+$sumPanel.BackColor = $cBG3
+$okLbl    = New-Lbl "OK: --"    10  6  100 20 $cGREEN  $cBG3 $fBold
+$unkLbl   = New-Lbl "UNK: --"  115  6  110 20 $cORANGE $cBG3 $fBold
+$cheatLbl = New-Lbl "CHEAT: --" 230  6  160 20 $cRED    $cBG3 $fBold
+$memLbl   = New-Lbl "MEM: --"   10 30  110 20 $cACCENT $cBG3 $fBold
+$siLbl    = New-Lbl "SI: --"   130 30  110 20 $cRED    $cBG3 $fBold
+$sumPanel.Controls.AddRange(@($okLbl,$unkLbl,$cheatLbl,$memLbl,$siLbl))
+$leftScroll.Controls.Add($sumPanel)
+
+$scanSplit.Panel2.Controls.Add((New-Lbl "  LIVE LOG" 0 0 660 28 $cACCENT $cBG2 $fBold))
+$liveLog = New-Object System.Windows.Forms.TextBox
+$liveLog.Location = New-Object System.Drawing.Point(0,30)
+$liveLog.Anchor = "Top,Bottom,Left,Right"
+$liveLog.Size = New-Object System.Drawing.Size(660,560)
+$liveLog.BackColor = $cBG; $liveLog.ForeColor = $cTEXT
+$liveLog.BorderStyle = "None"; $liveLog.Font = $fTiny
+$liveLog.Multiline = $true; $liveLog.ScrollBars = "Vertical"
+$liveLog.ReadOnly = $true; $liveLog.WordWrap = $true
+$scanSplit.Panel2.Controls.Add($liveLog)
+
+$runBtn.Add_Click({
     $mc  = $global:McFolder
     $out = $global:OutFolder
-    if (-not (Test-Path $mc)) { Log $liveLog "[ERROR] Mods folder not found: $mc"; return }
+    if (-not (Test-Path $mc)) { Log $liveLog "[ERROR] Mods folder not found."; return }
 
     $global:StopAll = $false
     $modBox.Items.Clear(); $memBox.Items.Clear()
@@ -360,27 +364,25 @@ $startBtn.Add_Click({
     $okLbl.Text = "OK: --"; $unkLbl.Text = "UNK: --"
     $cheatLbl.Text = "CHEAT: --"; $memLbl.Text = "MEM: --"; $siLbl.Text = "SI: --"
 
-    $startBtn.Visible = $false
-    $stopBtn.Visible = $true; $stopBtn.Enabled = $true
-    $backBtn2.Enabled = $false
+    $runBtn.Visible = $false
+    $stopBtn2.Visible = $true; $stopBtn2.Enabled = $true
+    $backBtn.Enabled = $false
     Set-Status "Running all scans..."
 
     $t = [System.Threading.Thread]::new({
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
         Log $liveLog "SS TOOL FULL SCAN"
-        Log $liveLog "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  --  $env:COMPUTERNAME / $env:USERNAME"
+        Log $liveLog "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $env:COMPUTERNAME / $env:USERNAME"
         Log $liveLog "Mods: $mc"
         Log $liveLog ""
 
-        Log $liveLog "--- MOD ANALYZER ---"
-        Set-Status "Scanning mods..."
-        Set-Prog 5
+        Log $liveLog "=== MOD ANALYZER ==="
+        Set-Status "Scanning mods..."; Set-Prog 5
 
         $jarFiles = Get-ChildItem -Path $mc -Filter "*.jar" -ErrorAction SilentlyContinue
         $total = $jarFiles.Count
-        $verOK = 0; $verUNK = 0; $verCHEAT = 0
-        $reportMods = @()
+        $verOK = 0; $verUNK = 0; $verCHEAT = 0; $reportMods = @()
 
         if ($total -eq 0) {
             Log $liveLog "[WARN] No .jar files found."
@@ -394,6 +396,7 @@ $startBtn.Add_Click({
                 Set-Prog ([int](($counter/$total)*28)+5)
                 Log $liveLog "[$counter/$total] $($file.Name)"
                 $hash = Get-SHA1 $file.FullName
+
                 $mr = Fetch-Modrinth $hash
                 if ($mr.Slug) {
                     Log $liveLog "  [OK] $($mr.Name)"
@@ -436,23 +439,22 @@ $startBtn.Add_Click({
                 }
                 if (-not $foundInDep) {
                     $zone = Get-ZoneId $file.FullName
-                    $zoneStr = if ($zone) { "from: $zone" } else { "no source" }
-                    Log $liveLog "  [UNK] $zoneStr"
+                    $zStr = if ($zone) { "from: $zone" } else { "no source" }
+                    Log $liveLog "  [UNK] $zStr"
                     $modBox.Invoke([Action]{ $modBox.Items.Add("[UNK] $($file.Name)") | Out-Null })
-                    $verUNK++; $reportMods += "[UNK]   $($file.Name)  --  $zoneStr"
+                    $verUNK++; $reportMods += "[UNK]   $($file.Name)  --  $zStr"
                 }
             }
         }
-        $ok_ = $verOK; $unk_ = $verUNK; $cheat_ = $verCHEAT
+        $ok_=$verOK; $unk_=$verUNK; $ch_=$verCHEAT
         $okLbl.Invoke([Action]{ $okLbl.Text = "OK: $ok_" })
         $unkLbl.Invoke([Action]{ $unkLbl.Text = "UNK: $unk_" })
-        $cheatLbl.Invoke([Action]{ $cheatLbl.Text = "CHEAT: $cheat_" })
-        Log $liveLog "Mod scan done -- OK:$verOK  UNK:$verUNK  CHEAT:$verCHEAT"
-        Log $liveLog ""
-        Set-Prog 35
+        $cheatLbl.Invoke([Action]{ $cheatLbl.Text = "CHEAT: $ch_" })
+        Log $liveLog "Mods done  OK:$verOK  UNK:$verUNK  CHEAT:$verCHEAT"
+        Log $liveLog ""; Set-Prog 35
 
         if (-not $global:StopAll) {
-            Log $liveLog "--- MEMORY SCAN ---"
+            Log $liveLog "=== MEMORY SCAN ==="
             Set-Status "Scanning memory..."
             Add-Type @"
 using System; using System.Runtime.InteropServices;
@@ -471,7 +473,7 @@ public class MemReader2 {
             if (-not $javaws) { $javaws = Get-Process -Name "java" -ErrorAction SilentlyContinue }
             $totalMemHits = 0
             if (-not $javaws) {
-                Log $liveLog "[WARN] Minecraft not running - skipping"
+                Log $liveLog "[WARN] Minecraft not running"
                 $memBox.Invoke([Action]{ $memBox.Items.Add("Minecraft not running") | Out-Null })
                 $memLbl.Invoke([Action]{ $memLbl.Text = "MEM: N/A" })
             } else {
@@ -485,8 +487,7 @@ public class MemReader2 {
                         $mbi = New-Object MemReader2+MBI3
                         $ret = [MemReader2]::VirtualQueryEx($handle,$addr,[ref]$mbi,[System.Runtime.InteropServices.Marshal]::SizeOf($mbi))
                         if ($ret -eq 0) { break }
-                        $size = $mbi.RegionSize.ToInt64()
-                        if ($size -le 0) { break }
+                        $size = $mbi.RegionSize.ToInt64(); if ($size -le 0) { break }
                         $readable = ($mbi.Protect -eq 0x02 -or $mbi.Protect -eq 0x04 -or $mbi.Protect -eq 0x20 -or $mbi.Protect -eq 0x40)
                         if ($mbi.State -eq 0x1000 -and $readable) {
                             $buf = New-Object byte[] ([Math]::Min($size,4MB)); $read = 0
@@ -516,13 +517,12 @@ public class MemReader2 {
                 $mh = $totalMemHits
                 $memLbl.Invoke([Action]{ $memLbl.Text = "MEM: $mh hit(s)" })
             }
-            Log $liveLog "Memory done -- $totalMemHits hit(s)"
-            Log $liveLog ""
-            Set-Prog 60
+            Log $liveLog "Memory done  $totalMemHits hit(s)"
+            Log $liveLog ""; Set-Prog 60
         }
 
         if (-not $global:StopAll) {
-            Log $liveLog "--- SYS INFO ---"
+            Log $liveLog "=== SYS INFO ==="
             Set-Status "Gathering sys info..."
             $jw = Get-Process -Name "javaw" -ErrorAction SilentlyContinue | Select-Object -First 1
             if (-not $jw) { $jw = Get-Process -Name "java" -ErrorAction SilentlyContinue | Select-Object -First 1 }
@@ -530,7 +530,7 @@ public class MemReader2 {
                 $el = (Get-Date) - $jw.StartTime
                 $ups = "$($el.Hours)h $($el.Minutes)m $($el.Seconds)s"
                 Log $liveLog "  Uptime: $ups (since $($jw.StartTime.ToString('HH:mm:ss'))) PID $($jw.Id)"
-                $sysBox.Invoke([Action]{ $sysBox.Items.Add("Uptime: $ups") | Out-Null })
+                $sysBox.Invoke([Action]{ $sysBox.Items.Add("Uptime: $ups since $($jw.StartTime.ToString('HH:mm:ss'))") | Out-Null })
             } else {
                 Log $liveLog "  MC not running"
                 $sysBox.Invoke([Action]{ $sysBox.Items.Add("MC not running") | Out-Null })
@@ -548,12 +548,11 @@ public class MemReader2 {
                 $sysBox.Invoke([Action]{ $sysBox.Items.Add("HWID: error") | Out-Null })
             }
             Log $liveLog "Sys info done"
-            Log $liveLog ""
-            Set-Prog 75
+            Log $liveLog ""; Set-Prog 75
         }
 
         if (-not $global:StopAll) {
-            Log $liveLog "--- SI DEEP SCAN ---"
+            Log $liveLog "=== SI DEEP SCAN ==="
             Set-Status "SI deep scan..."
             $siExe = $SI_PATHS | Where-Object { Test-Path $_ } | Select-Object -First 1
             if (-not $siExe) {
@@ -586,16 +585,14 @@ public class SIMem2 {
                     $handle2 = [SIMem2]::OpenProcess(0x0410,$false,$javaw2.Id)
                     $allHits2 = @{}; $addr2 = [IntPtr]::Zero; $scanned2 = 0
                     if ($handle2 -eq [IntPtr]::Zero) {
-                        Log $liveLog "[ERROR] Cannot open javaw - need admin"
+                        Log $liveLog "[ERROR] Cannot open javaw - run as admin"
                     } else {
                         while ($scanned2 -lt 1GB -and -not $global:StopAll) {
                             $mbi2 = New-Object SIMem2+MBI4
                             $ret2 = [SIMem2]::VirtualQueryEx($handle2,$addr2,[ref]$mbi2,[System.Runtime.InteropServices.Marshal]::SizeOf($mbi2))
                             if ($ret2 -eq 0) { break }
-                            $size2 = $mbi2.RegionSize.ToInt64()
-                            if ($size2 -le 0) { break }
-                            $priv2 = $mbi2.Type  -eq 0x20000
-                            $comm2 = $mbi2.State -eq 0x1000
+                            $size2 = $mbi2.RegionSize.ToInt64(); if ($size2 -le 0) { break }
+                            $priv2 = $mbi2.Type -eq 0x20000; $comm2 = $mbi2.State -eq 0x1000
                             $read2 = ($mbi2.Protect -eq 0x02 -or $mbi2.Protect -eq 0x04 -or $mbi2.Protect -eq 0x20 -or $mbi2.Protect -eq 0x40)
                             if ($priv2 -and $comm2 -and $read2) {
                                 $buf2 = New-Object byte[] ([Math]::Min($size2,8MB)); $rb2 = 0
@@ -632,23 +629,13 @@ public class SIMem2 {
                     $siLbl.Invoke([Action]{ $siLbl.Text = "SI: $sh hit(s)" })
                 }
             }
-            Log $liveLog "SI done"
-            Log $liveLog ""
-            Set-Prog 90
+            Log $liveLog "SI done"; Log $liveLog ""; Set-Prog 90
         }
 
         if (-not $global:StopAll) {
             Log $liveLog "Writing report..."
             $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
-            $lines = @(
-                "="*60,
-                "  SS TOOL FULL SCAN REPORT",
-                "  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
-                "  $env:COMPUTERNAME / $env:USERNAME",
-                "  Mods: $mc",
-                "="*60,""
-            )
-            $lines += "--- MOD ANALYZER ---"
+            $lines = @("="*60,"  SS TOOL FULL SCAN REPORT","  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')","  $env:COMPUTERNAME / $env:USERNAME","  Mods: $mc","="*60,"","--- MOD ANALYZER ---")
             foreach ($r in $reportMods) { $lines += "  $r" }
             $lines | Out-File "$out\fullscan_$stamp.txt" -Encoding UTF8
             Log $liveLog "Report saved: $out\fullscan_$stamp.txt"
@@ -656,12 +643,11 @@ public class SIMem2 {
 
         Set-Prog 100
         Set-Status "All scans complete"
-        Log $liveLog ""
-        Log $liveLog "ALL SCANS COMPLETE"
+        Log $liveLog ""; Log $liveLog "ALL SCANS COMPLETE"
 
-        $startBtn.Invoke([Action]{ $startBtn.Visible = $true })
-        $stopBtn.Invoke([Action]{ $stopBtn.Visible = $false; $stopBtn.Enabled = $false })
-        $backBtn2.Invoke([Action]{ $backBtn2.Enabled = $true })
+        $runBtn.Invoke([Action]{ $runBtn.Visible = $true })
+        $stopBtn2.Invoke([Action]{ $stopBtn2.Visible = $false; $stopBtn2.Enabled = $false })
+        $backBtn.Invoke([Action]{ $backBtn.Enabled = $true })
     })
     $t.IsBackground = $true; $t.Start()
 })
