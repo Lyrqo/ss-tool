@@ -33,28 +33,18 @@ try:
 except ImportError:
     HAS_PYAUTOGUI = False
 
-# Crystal PVP specific keywords for System Informer memory search
 CRYSTAL_KEYWORDS = [
-    # Crystal automation
     "AutoCrystal", "CrystalAura", "CrystalPlace", "PlaceCrystal",
     "BreakCrystal", "ExplodeCrystal", "CrystalSwap", "CSwap",
-    # Surround / trap
     "Surround", "AntiSurround", "SurroundBreaker", "Trap", "HoleFiller",
-    # Bed / anchor
     "BedAura", "AnchorAura", "BedBomb", "AutoBed", "AutoAnchor",
-    # Totem / pop tracking
     "AutoTotem", "TotemPopper", "PopCounter", "TotemCounter", "AutoOffhand",
-    # Movement
     "PacketFly", "MotionFly", "ElytraFly", "ElytraBoost", "Phase",
-    # Aura / combat
     "KillAura", "AuraModule", "TriggerBot", "AutoClicker",
-    # Obsidian / block placing
     "AutoObsidian", "ObsidianFiller", "AutoSwap", "OffhandSwap",
-    # Generic inject strings
     "sendPacket", "injectPacket", "ClassFileTransformer", "bytebuddy",
 ]
 
-# System Informer install locations to check
 SI_PATHS = [
     r"C:\Program Files\SystemInformer\SystemInformer.exe",
     r"C:\Program Files (x86)\SystemInformer\SystemInformer.exe",
@@ -64,7 +54,6 @@ SI_PATHS = [
     r"C:\Tools\ProcessHacker\ProcessHacker.exe",
 ]
 
-# Window class names used by System Informer / Process Hacker
 SI_WINDOW_CLASSES = ["MainWindowClass", "ProcessHacker"]
 
 CHEAT_NAMES = [
@@ -111,14 +100,73 @@ MONO   = ("Consolas", 9)
 UI     = ("Segoe UI", 10)
 BOLD   = ("Segoe UI Semibold", 11)
 
+class FolderPrompt(tk.Tk):
+    """Initial popup that asks for the Minecraft folder before the main scanner opens."""
+
+    def __init__(self):
+        super().__init__()
+        self.title("MC Cheat Scanner — Setup")
+        self.geometry("560x220")
+        self.resizable(False, False)
+        self.configure(bg=BG)
+        self.result = None
+
+        self.eval('tk::PlaceWindow . center')
+
+        tk.Label(self, text="⚡  MC CHEAT SCANNER", font=("Segoe UI Semibold", 14),
+                 bg=BG, fg=ACCENT).pack(pady=(22, 4))
+        tk.Label(self, text="Enter the Minecraft instance folder to scan\n(e.g. the folder containing mods/, config/, etc.)",
+                 font=UI, bg=BG, fg=DIM, justify="center").pack(pady=(0, 12))
+
+        row = tk.Frame(self, bg=BG)
+        row.pack(fill="x", padx=24)
+
+        self._entry = tk.Entry(row, font=UI, bg=BG2, fg=TEXT,
+                                insertbackground=ACCENT, relief="flat", bd=0,
+                                highlightthickness=1, highlightcolor=ACCENT,
+                                highlightbackground=BORDER)
+        self._entry.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 8))
+
+        tk.Button(row, text="📁 Browse", font=UI, bg=BG2, fg=ACCENT,
+                  activebackground=BORDER, activeforeground=ACCENT,
+                  relief="flat", bd=0, padx=10, pady=4, cursor="hand2",
+                  command=self._browse).pack(side="left")
+
+        tk.Button(self, text="▶  START SCAN", font=BOLD, bg=GREEN, fg=BG,
+                  activebackground="#26c25a", activeforeground=BG,
+                  relief="flat", bd=0, padx=24, pady=8, cursor="hand2",
+                  command=self._confirm).pack(pady=18)
+
+        self._entry.focus()
+        self.bind("<Return>", lambda e: self._confirm())
+
+    def _browse(self):
+        d = filedialog.askdirectory(title="Select Minecraft instance folder")
+        if d:
+            self._entry.delete(0, "end")
+            self._entry.insert(0, d)
+
+    def _confirm(self):
+        path = self._entry.get().strip()
+        if not path:
+            self._entry.configure(highlightbackground=RED)
+            return
+        if not os.path.isdir(path):
+            self._entry.configure(highlightbackground=RED)
+            tk.Label(self, text="⚠  Folder not found!", font=UI, bg=BG, fg=RED).pack()
+            return
+        self.result = path
+        self.destroy()
 
 class Scanner(tk.Tk):
-    def __init__(self):
+    def __init__(self, mc_folder):
         super().__init__()
         self.title("MC Cheat Scanner  v2.0")
         self.geometry("1050x720")
         self.minsize(900, 600)
         self.configure(bg=BG)
+
+        self._mc_folder = mc_folder
 
         self._thread   = None
         self._stop     = threading.Event()
@@ -130,6 +178,7 @@ class Scanner(tk.Tk):
 
         self._build()
         self._check_deps()
+        self._write(f"  📁  Scanning folder: {self._mc_folder}", "ok")
 
     def _build(self):
         header = tk.Frame(self, bg=BG2, height=56)
@@ -163,6 +212,9 @@ class Scanner(tk.Tk):
                   activebackground=BORDER, activeforeground=ACCENT,
                   relief="flat", bd=0, padx=14, pady=5, cursor="hand2",
                   command=self._browse).pack(side="left", padx=(0, 20))
+
+        tk.Label(cfg, text=f"🗂  {self._mc_folder}", font=("Segoe UI", 9),
+                 bg=BG3, fg=ACCENT).pack(side="left", padx=(0, 12))
 
         self._start_btn = tk.Button(cfg, text="▶  START SCAN", font=BOLD,
                                      bg=GREEN, fg=BG, activebackground="#26c25a",
@@ -379,7 +431,8 @@ class Scanner(tk.Tk):
         t0 = time.time()
         self._write(f"\n  Started : {datetime.datetime.now().strftime('%Y-%m-%d  %H:%M:%S')}", "head")
         self._write(f"  Host    : {os.environ.get('COMPUTERNAME', 'Unknown')}", "dim")
-        self._write(f"  User    : {os.environ.get('USERNAME', 'Unknown')}\n", "dim")
+        self._write(f"  User    : {os.environ.get('USERNAME', 'Unknown')}", "dim")
+        self._write(f"  Folder  : {self._mc_folder}\n", "dim")
 
         steps = [
             ("Finding Minecraft processes",             self._scan_procs),
@@ -532,44 +585,35 @@ class Scanner(tk.Tk):
                 self._write(f"  ⚠  {len(hits)} hit(s) in PID {proc.pid}", "warning")
 
     def _scan_dirs(self):
-        roots = []
-        candidates = [os.path.join(os.environ.get("APPDATA", ""), ".minecraft"),
-                       os.path.join(os.path.expanduser("~"), ".minecraft")]
-        for c in candidates:
-            if os.path.isdir(c):
-                roots.append(c)
-                self._write(f"  ✔  Found: {c}", "ok")
-        if not roots:
-            self._write("  No Minecraft folders found", "dim")
-            return
+        """Scan the user-provided Minecraft folder instead of the default path."""
+        root = self._mc_folder
+        self._write(f"  Scanning: {root}", "info")
 
-        for root in roots:
-            self._write(f"  Scanning: {root}", "info")
-            for dirpath, dirnames, filenames in os.walk(root):
-                if self._stop.is_set():
-                    return
-                dirnames[:] = [d for d in dirnames if d.lower() not in
-                                {"versions", "assets", "libraries", "natives", "cache"}]
-                for fname in filenames:
-                    ext = os.path.splitext(fname)[1].lower()
-                    if ext not in SCAN_EXTS:
-                        continue
-                    fpath = os.path.join(dirpath, fname)
-                    for cheat in CHEAT_NAMES:
-                        if cheat in fname.lower():
-                            self._write(f"  🔴  Cheat file: {fname}", "critical")
-                            self._finding("critical", "Cheat File", f"Matches '{cheat}'", fpath)
-                    if ext in {".json", ".cfg", ".properties"}:
-                        try:
-                            content = open(fpath, errors="replace").read(65536).lower()
-                            for cheat in CHEAT_NAMES:
-                                if cheat in content:
-                                    self._write(f"  🟠  Cheat string in config: {fname}", "warning")
-                                    self._finding("warning", "Config Match",
-                                                   f"'{cheat}' in config file", fpath)
-                                    break
-                        except Exception:
-                            pass
+        for dirpath, dirnames, filenames in os.walk(root):
+            if self._stop.is_set():
+                return
+            dirnames[:] = [d for d in dirnames if d.lower() not in
+                            {"versions", "assets", "libraries", "natives", "cache"}]
+            for fname in filenames:
+                ext = os.path.splitext(fname)[1].lower()
+                if ext not in SCAN_EXTS:
+                    continue
+                fpath = os.path.join(dirpath, fname)
+                for cheat in CHEAT_NAMES:
+                    if cheat in fname.lower():
+                        self._write(f"  🔴  Cheat file: {fname}", "critical")
+                        self._finding("critical", "Cheat File", f"Matches '{cheat}'", fpath)
+                if ext in {".json", ".cfg", ".properties"}:
+                    try:
+                        content = open(fpath, errors="replace").read(65536).lower()
+                        for cheat in CHEAT_NAMES:
+                            if cheat in content:
+                                self._write(f"  🟠  Cheat string in config: {fname}", "warning")
+                                self._finding("warning", "Config Match",
+                                               f"'{cheat}' in config file", fpath)
+                                break
+                    except Exception:
+                        pass
 
     def _scan_startup(self):
         if sys.platform != "win32":
@@ -631,6 +675,7 @@ class Scanner(tk.Tk):
             "  MC CHEAT SCANNER — REPORT",
             f"  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"  {os.environ.get('COMPUTERNAME', 'Unknown')} / {os.environ.get('USERNAME', 'Unknown')}",
+            f"  Scanned folder: {self._mc_folder}",
             "=" * 70,
             "",
             f"  Total: {len(self._findings)}  |  Critical: {len(crits)}  |  Warning: {len(warns)}  |  Info: {len(infos)}",
@@ -650,19 +695,18 @@ class Scanner(tk.Tk):
             fh.write("\n".join(lines))
         with open(jf, "w", encoding="utf-8") as fh:
             json.dump({
-                "time":     datetime.datetime.now().isoformat(),
-                "host":     os.environ.get("COMPUTERNAME", "Unknown"),
-                "user":     os.environ.get("USERNAME", "Unknown"),
-                "summary":  {"total": len(self._findings), "critical": len(crits),
-                              "warning": len(warns), "info": len(infos)},
-                "findings": self._findings,
+                "time":          datetime.datetime.now().isoformat(),
+                "host":          os.environ.get("COMPUTERNAME", "Unknown"),
+                "user":          os.environ.get("USERNAME", "Unknown"),
+                "scanned_folder": self._mc_folder,
+                "summary":       {"total": len(self._findings), "critical": len(crits),
+                                   "warning": len(warns), "info": len(infos)},
+                "findings":      self._findings,
             }, fh, indent=2)
 
         self._write(f"\n  ✔  {txt}", "ok")
         self._write(f"  ✔  {jf}", "ok")
 
-
-    # ── System Informer automation ──────────────────────────────────────────
     def _run_si_scan(self):
         if sys.platform != "win32":
             self._write("  Skipped (Windows-only)", "dim")
@@ -744,7 +788,6 @@ class Scanner(tk.Tk):
         si.close_properties(prop_hwnd)
         self._write(f"\n  System Informer scan complete — {sum(v > 0 for v in hits.values())} keyword(s) hit", "info")
 
-
 class SIAutomator:
     """Drives System Informer / Process Hacker via win32 + pyautogui."""
 
@@ -757,7 +800,6 @@ class SIAutomator:
         for path in SI_PATHS:
             if os.path.isfile(path):
                 return path
-        # also check PATH
         for name in ("SystemInformer.exe", "ProcessHacker.exe"):
             for d in os.environ.get("PATH", "").split(os.pathsep):
                 p = os.path.join(d, name)
@@ -766,12 +808,10 @@ class SIAutomator:
         return None
 
     def ensure_running(self, exe):
-        # check if already open
         for cls in SI_WINDOW_CLASSES:
             if win32gui.FindWindow(cls, None):
                 self._log("  ✔  System Informer already running", "ok")
                 return True
-        # launch it
         try:
             import subprocess
             subprocess.Popen([exe])
@@ -802,27 +842,13 @@ class SIAutomator:
         return None
 
     def focus_process_in_si(self, hwnd, target_pid):
-        """
-        Bring SI to foreground, then use Ctrl+F (Find) to jump to the PID,
-        or just click on the process row in the list.
-        """
         try:
             win32gui.SetForegroundWindow(hwnd)
             time.sleep(0.4)
-
-            # Try to use SI's built-in "Find Process" shortcut (Ctrl+F in some versions)
-            # We'll type the PID into whatever search box appears, or just
-            # double-click the row we find via LVM
-            rect = win32gui.GetWindowRect(hwnd)
-            win_x = rect[0]
-            win_y = rect[1]
-
-            # Find the SysListView32 inside SI that holds the process list
             list_hwnd = self._find_child_by_class(hwnd, "SysListView32")
             if not list_hwnd:
-                # fallback — use Ctrl+F
-                win32api.keybd_event(0x11, 0, 0, 0)  # Ctrl down
-                win32api.keybd_event(0x46, 0, 0, 0)  # F down
+                win32api.keybd_event(0x11, 0, 0, 0)
+                win32api.keybd_event(0x46, 0, 0, 0)
                 win32api.keybd_event(0x46, 0, win32con.KEYEVENTF_KEYUP, 0)
                 win32api.keybd_event(0x11, 0, win32con.KEYEVENTF_KEYUP, 0)
                 time.sleep(0.5)
@@ -831,12 +857,10 @@ class SIAutomator:
                 time.sleep(0.5)
                 return True
 
-            # Use LVM_FINDITEM to locate the row
             row = self._lv_find_text(list_hwnd, str(target_pid))
             if row == -1:
                 return False
 
-            # Select it
             LVM_SETITEMSTATE = 0x102B
             LVIS_SELECTED    = 0x0002
             LVIS_FOCUSED     = 0x0001
@@ -855,14 +879,13 @@ class SIAutomator:
                 ]
 
             lvi        = LVITEM()
-            lvi.mask   = 0x0008  # LVIF_STATE
+            lvi.mask   = 0x0008
             lvi.state  = LVIS_SELECTED | LVIS_FOCUSED
             lvi.stateMask = LVIS_SELECTED | LVIS_FOCUSED
 
             ctypes.windll.user32.SendMessageW(
                 list_hwnd, LVM_SETITEMSTATE, row, ctypes.byref(lvi))
 
-            # Scroll the item into view
             LVM_ENSUREVISIBLE = 0x1013
             ctypes.windll.user32.SendMessageW(list_hwnd, LVM_ENSUREVISIBLE, row, False)
             time.sleep(0.3)
@@ -873,11 +896,9 @@ class SIAutomator:
             return False
 
     def open_process_properties(self, hwnd):
-        """Double-click the selected process row or press Enter."""
         try:
             win32gui.SetForegroundWindow(hwnd)
             time.sleep(0.2)
-            # Enter opens properties in System Informer
             win32api.keybd_event(0x0D, 0, 0, 0)
             win32api.keybd_event(0x0D, 0, win32con.KEYEVENTF_KEYUP, 0)
             return True
@@ -886,7 +907,6 @@ class SIAutomator:
             return False
 
     def wait_for_properties_window(self, timeout=8):
-        """Wait for the Process Properties dialog to appear."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             result = [None]
@@ -901,25 +921,21 @@ class SIAutomator:
         return None
 
     def click_memory_tab(self, prop_hwnd):
-        """Click the Memory tab in process properties."""
         try:
             win32gui.SetForegroundWindow(prop_hwnd)
             time.sleep(0.3)
 
-            # Find the tab control
             tab_hwnd = self._find_child_by_class(prop_hwnd, "SysTabControl32")
             if not tab_hwnd:
                 tab_hwnd = self._find_child_by_class(prop_hwnd, "TabControl")
 
             if tab_hwnd:
-                # Enumerate tabs to find "Memory"
                 TCM_GETITEMCOUNT = 0x1304
                 TCM_GETITEMW     = 0x133C
                 TCM_SETCURSEL    = 0x130C
 
                 count = ctypes.windll.user32.SendMessageW(tab_hwnd, TCM_GETITEMCOUNT, 0, 0)
 
-                # find Memory tab index
                 mem_idx = -1
                 for i in range(count):
                     buf = ctypes.create_unicode_buffer(64)
@@ -936,7 +952,7 @@ class SIAutomator:
                         ]
 
                     item = TCITEM()
-                    item.mask      = 0x0001  # TCIF_TEXT
+                    item.mask      = 0x0001
                     item.pszText   = buf
                     item.cchTextMax= 64
 
@@ -950,24 +966,17 @@ class SIAutomator:
 
                 if mem_idx >= 0:
                     ctypes.windll.user32.SendMessageW(tab_hwnd, TCM_SETCURSEL, mem_idx, 0)
-                    # Send WM_NOTIFY to actually switch the page
                     win32api.PostMessage(prop_hwnd, win32con.WM_COMMAND, mem_idx, 0)
                     time.sleep(0.4)
                     return True
 
-            # Fallback — use pyautogui to click the Memory tab visually
             rect = win32gui.GetWindowRect(prop_hwnd)
-            # Memory tab is usually in the top tab strip, try clicking across tabs
             tab_y = rect[1] + 45
             tab_x_start = rect[0] + 10
             tab_width    = 70
             for i in range(12):
                 pyautogui.click(tab_x_start + i * tab_width, tab_y)
                 time.sleep(0.2)
-                # check window title for hint
-                title = win32gui.GetWindowText(prop_hwnd)
-                # we can't easily read which tab is selected without more work
-                # just try clicking position 4 (0-indexed) for Memory
                 if i == 3:
                     return True
 
@@ -977,10 +986,6 @@ class SIAutomator:
             return False
 
     def run_memory_searches(self, prop_hwnd, keywords):
-        """
-        For each keyword, open the memory search dialog, set type to String/4,
-        set Contains mode, enter the keyword, and count results.
-        """
         results = {}
         win32gui.SetForegroundWindow(prop_hwnd)
         time.sleep(0.3)
@@ -988,7 +993,6 @@ class SIAutomator:
         for kw in keywords:
             if self._stop.is_set():
                 break
-
             count = self._single_memory_search(prop_hwnd, kw)
             results[kw] = count
             time.sleep(0.2)
@@ -996,25 +1000,18 @@ class SIAutomator:
         return results
 
     def _single_memory_search(self, prop_hwnd, keyword):
-        """
-        Open Find in memory dialog (Ctrl+F or toolbar button), configure it,
-        run the search, and return number of hits.
-        """
         try:
             win32gui.SetForegroundWindow(prop_hwnd)
             time.sleep(0.15)
 
-            # Open memory search — Ctrl+F inside the memory tab
             win32api.keybd_event(0x11, 0, 0, 0)
             win32api.keybd_event(0x46, 0, 0, 0)
             win32api.keybd_event(0x46, 0, win32con.KEYEVENTF_KEYUP, 0)
             win32api.keybd_event(0x11, 0, win32con.KEYEVENTF_KEYUP, 0)
             time.sleep(0.5)
 
-            # Wait for the search dialog
             search_hwnd = self._wait_for_child_dialog(prop_hwnd, timeout=3)
             if not search_hwnd:
-                # Try clicking Find Memory toolbar button area via pyautogui
                 rect = win32gui.GetWindowRect(prop_hwnd)
                 pyautogui.click(rect[0] + 60, rect[1] + 85)
                 time.sleep(0.5)
@@ -1023,50 +1020,41 @@ class SIAutomator:
             if not search_hwnd:
                 return 0
 
-            # Find the edit box and type keyword
             edit = self._find_child_by_class(search_hwnd, "Edit")
             if edit:
                 win32gui.SetFocus(edit)
                 time.sleep(0.1)
-                # Clear existing text
                 win32api.keybd_event(0x11, 0, 0, 0)
-                win32api.keybd_event(0x41, 0, 0, 0)  # Ctrl+A
+                win32api.keybd_event(0x41, 0, 0, 0)
                 win32api.keybd_event(0x41, 0, win32con.KEYEVENTF_KEYUP, 0)
                 win32api.keybd_event(0x11, 0, win32con.KEYEVENTF_KEYUP, 0)
                 pyautogui.typewrite(keyword, interval=0.03)
 
-            # Find the value type combobox and set to index 4 (String / 4-byte)
             combos = self._find_all_children_by_class(search_hwnd, "ComboBox")
             if len(combos) >= 1:
-                # First combo = Value type — set to index 4
-                ctypes.windll.user32.SendMessageW(combos[0], 0x014E, 4, 0)  # CB_SETCURSEL = 4
+                ctypes.windll.user32.SendMessageW(combos[0], 0x014E, 4, 0)
                 time.sleep(0.1)
             if len(combos) >= 2:
-                # Second combo = Match type — find "Contains" option
                 cb = combos[1]
-                n  = ctypes.windll.user32.SendMessageW(cb, 0x0146, 0, 0)  # CB_GETCOUNT
+                n  = ctypes.windll.user32.SendMessageW(cb, 0x0146, 0, 0)
                 for i in range(n):
                     buf = ctypes.create_unicode_buffer(64)
-                    ctypes.windll.user32.SendMessageW(cb, 0x0148, i, buf)  # CB_GETLBTEXT
+                    ctypes.windll.user32.SendMessageW(cb, 0x0148, i, buf)
                     if "contain" in buf.value.lower():
-                        ctypes.windll.user32.SendMessageW(cb, 0x014E, i, 0)  # CB_SETCURSEL
+                        ctypes.windll.user32.SendMessageW(cb, 0x014E, i, 0)
                         break
 
-            # Press OK / Find / Search button
             self._click_default_button(search_hwnd)
             time.sleep(1.5)
 
-            # Count results in the results list view
             result_lv = self._find_child_by_class(search_hwnd, "SysListView32")
             if result_lv:
                 LVM_GETITEMCOUNT = 0x1004
                 count = ctypes.windll.user32.SendMessageW(result_lv, LVM_GETITEMCOUNT, 0, 0)
-                # Close the dialog
                 win32api.PostMessage(search_hwnd, win32con.WM_CLOSE, 0, 0)
                 time.sleep(0.3)
                 return count
 
-            # Fallback — close and return unknown
             win32api.PostMessage(search_hwnd, win32con.WM_CLOSE, 0, 0)
             return 0
 
@@ -1080,7 +1068,6 @@ class SIAutomator:
         except Exception:
             pass
 
-    # ── win32 helpers ────────────────────────────────────────────────────────
     def _find_child_by_class(self, parent, cls):
         result = [None]
         def cb(hwnd, _):
@@ -1107,7 +1094,6 @@ class SIAutomator:
         return results
 
     def _lv_find_text(self, lv_hwnd, text):
-        """Find a row in a ListView containing the given text. Returns index or -1."""
         LVM_GETITEMCOUNT = 0x1004
         LVM_GETITEMTEXTW = 0x1073
         count = ctypes.windll.user32.SendMessageW(lv_hwnd, LVM_GETITEMCOUNT, 0, 0)
@@ -1157,7 +1143,6 @@ class SIAutomator:
         return None
 
     def _click_default_button(self, hwnd):
-        """Click the first visible Button that looks like OK/Find/Search."""
         buttons = self._find_all_children_by_class(hwnd, "Button")
         for b in buttons:
             text = win32gui.GetWindowText(b).lower()
@@ -1167,10 +1152,8 @@ class SIAutomator:
                 cy   = (rect[1] + rect[3]) // 2
                 pyautogui.click(cx, cy)
                 return
-        # fallback — press Enter
         win32api.keybd_event(0x0D, 0, 0, 0)
         win32api.keybd_event(0x0D, 0, win32con.KEYEVENTF_KEYUP, 0)
-
 
 if __name__ == "__main__":
     if sys.platform == "win32":
@@ -1182,4 +1165,8 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-    Scanner().mainloop() 
+    prompt = FolderPrompt()
+    prompt.mainloop()
+
+    if prompt.result:
+        Scanner(prompt.result).mainloop()
