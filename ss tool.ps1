@@ -27,12 +27,15 @@ $fTiny = New-Object System.Drawing.Font("Consolas", 8)
 $CHEATS    = @("wurst","impact","future","liquidbounce","aristois","meteor","killaura","sigma","entropy","novoline","rusherhack","vape","astolfo","inertia","ghost","rise","tenacity","aura","esp","aimbot","bhop","scaffold","velocity","criticals","nofall","autoeat","autofish","tracers","xray","freecam","fly","speed","jesus","mixin","bytebuddy","javassist","agentmain","premain")
 $SCAN_EXTS = @(".jar",".zip",".class",".json",".cfg",".properties")
 $MEM_SIGS  = @("KillAura","killaura","AutoCrystal","autocrystal","Scaffold","scaffold","Velocity","NoFall","Freecam","ESP","Xray","xray","BHop","Flight","CrystalAura","BaritoneAPI","agentmain","premain","ClassFileTransformer","bytebuddy","javassist","aimbot","wallhack","autoclick","triggerbot","sendPacket","injectPacket","noknockback")
+$SI_KEYWORDS = @("AutoCrystal","CrystalAura","CrystalPlace","BreakCrystal","ExplodeCrystal","CrystalSwap","Surround","AntiSurround","SurroundBreaker","Trap","HoleFiller","BedAura","AnchorAura","AutoTotem","TotemPopper","PopCounter","AutoOffhand","PacketFly","MotionFly","ElytraFly","Phase","KillAura","TriggerBot","AutoClicker","AutoObsidian","sendPacket","injectPacket","ClassFileTransformer","bytebuddy","agentmain","premain")
+$SI_PATHS  = @("$env:ProgramFiles\SystemInformer\SystemInformer.exe","${env:ProgramFiles(x86)}\SystemInformer\SystemInformer.exe","$env:ProgramFiles\Process Hacker 2\ProcessHacker.exe","${env:ProgramFiles(x86)}\Process Hacker 2\ProcessHacker.exe","C:\Tools\SystemInformer\SystemInformer.exe","C:\Tools\ProcessHacker\ProcessHacker.exe")
 
 $global:McFolder  = ""
 $global:OutFolder = ""
 $global:Findings  = @()
 $global:StopScan  = $false
 $global:StopMem   = $false
+$global:StopSI    = $false
 
 function New-Lbl($txt,$x,$y,$w,$h,$fg,$bg,$font=$fUI,$align="MiddleLeft") {
     $l = New-Object System.Windows.Forms.Label
@@ -58,6 +61,11 @@ function New-Tbox($x,$y,$w,$h,$multi=$false) {
 function Log($box,$txt) {
     if ($box.InvokeRequired) { $box.Invoke([Action]{ $box.AppendText("$txt`r`n"); $box.ScrollToCaret() }) }
     else { $box.AppendText("$txt`r`n"); $box.ScrollToCaret() }
+}
+function Browse-Folder($title) {
+    $shell = New-Object -ComObject Shell.Application
+    $folder = $shell.BrowseForFolder(0, $title, 0, 0)
+    if ($folder) { return $folder.Self.Path } else { return $null }
 }
 
 $Form = New-Object System.Windows.Forms.Form
@@ -112,17 +120,17 @@ function Show-Page($name) {
     }
 }
 
-$navNames = @("Setup","Scanner","Memory","Sys Info")
+$navNames = @("Setup","Scanner","Memory","Sys Info","System Informer")
 $nx = 0
 foreach ($name in $navNames) {
     $nb = New-Object System.Windows.Forms.Button
     $nb.Text=" $name "; $nb.Tag=$name
-    $nb.Location=New-Object System.Drawing.Point($nx,0); $nb.Size=New-Object System.Drawing.Size(110,40)
+    $nb.Location=New-Object System.Drawing.Point($nx,0); $nb.Size=New-Object System.Drawing.Size(140,40)
     $nb.BackColor=$cBG2; $nb.ForeColor=$cDIM; $nb.FlatStyle="Flat"
     $nb.FlatAppearance.BorderSize=0; $nb.Font=$fBold; $nb.Cursor="Hand"
     $nb.Add_Click({ param($s,$e) Show-Page $s.Tag })
     $Nav.Controls.Add($nb)
-    $nx += 110
+    $nx += 140
     $page = New-Object System.Windows.Forms.Panel
     $page.Dock="Fill"; $page.BackColor=$cBG; $page.Visible=$false
     $Container.Controls.Add($page)
@@ -133,27 +141,42 @@ $pSetup   = $Pages["Setup"]
 $pScan    = $Pages["Scanner"]
 $pMemory  = $Pages["Memory"]
 $pSysInfo = $Pages["Sys Info"]
+$pSI      = $Pages["System Informer"]
 
 $pSetup.Controls.Add((New-Lbl "SETUP" 20 18 300 30 $cACCENT $cBG $fHead))
 $pSetup.Controls.Add((New-Lbl "Set your folders before running any scan." 20 52 600 22 $cDIM $cBG $fUI))
 $pSetup.Controls.Add((New-Lbl "Minecraft Mods Folder" 20 88 300 22 $cACCENT $cBG $fBold))
-$McEntry = New-Tbox 20 114 780 28
+$McEntry = New-Tbox 20 114 740 28
 $pSetup.Controls.Add($McEntry)
-$bMc = New-Btn "Browse" 812 112 100 30 $cBG3 $cACCENT
+$bMc = New-Btn "Browse" 770 112 100 30 $cBG3 $cACCENT
 $bMc.Add_Click({
-    $d=New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description="Select Minecraft mods folder"
-    if ($d.ShowDialog()-eq"OK") { $McEntry.Text=$d.SelectedPath; $global:McFolder=$d.SelectedPath }
+    $path = Browse-Folder "Select Minecraft mods folder"
+    if ($path) { $McEntry.Text=$path; $global:McFolder=$path }
 })
 $pSetup.Controls.Add($bMc)
+$bMcExplorer = New-Btn "Open" 878 112 80 30 $cBG3 $cDIM
+$bMcExplorer.Add_Click({
+    $p = if ($McEntry.Text.Trim()) { $McEntry.Text.Trim() } else { $env:APPDATA }
+    Start-Process explorer.exe $p
+})
+$pSetup.Controls.Add($bMcExplorer)
+
 $pSetup.Controls.Add((New-Lbl "Output / Report Folder" 20 158 300 22 $cACCENT $cBG $fBold))
-$OutEntry = New-Tbox 20 184 780 28
+$OutEntry = New-Tbox 20 184 740 28
 $pSetup.Controls.Add($OutEntry)
-$bOut = New-Btn "Browse" 812 182 100 30 $cBG3 $cACCENT
+$bOut = New-Btn "Browse" 770 182 100 30 $cBG3 $cACCENT
 $bOut.Add_Click({
-    $d=New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description="Select output folder"
-    if ($d.ShowDialog()-eq"OK") { $OutEntry.Text=$d.SelectedPath; $global:OutFolder=$d.SelectedPath }
+    $path = Browse-Folder "Select output folder"
+    if ($path) { $OutEntry.Text=$path; $global:OutFolder=$path }
 })
 $pSetup.Controls.Add($bOut)
+$bOutExplorer = New-Btn "Open" 878 182 80 30 $cBG3 $cDIM
+$bOutExplorer.Add_Click({
+    $p = if ($OutEntry.Text.Trim()) { $OutEntry.Text.Trim() } else { $env:USERPROFILE }
+    Start-Process explorer.exe $p
+})
+$pSetup.Controls.Add($bOutExplorer)
+
 $pSetup.Controls.Add((New-Lbl "Quick Launch" 20 228 300 22 $cACCENT $cBG $fBold))
 $qlScan = New-Btn "▶  File Scanner" 20 254 150 36 $cGREEN $cBG
 $qlScan.Add_Click({ Show-Page "Scanner" })
@@ -161,14 +184,19 @@ $pSetup.Controls.Add($qlScan)
 $qlMem = New-Btn "▶  Memory Scan" 180 254 150 36 $cACCENT $cBG
 $qlMem.Add_Click({ Show-Page "Memory" })
 $pSetup.Controls.Add($qlMem)
-$qlSys = New-Btn "▶  Sys Info" 340 254 150 36 $cORANGE $cBG
+$qlSys = New-Btn "▶  Sys Info" 340 254 130 36 $cORANGE $cBG
 $qlSys.Add_Click({ Show-Page "Sys Info" })
 $pSetup.Controls.Add($qlSys)
-$reqTxt  = if (Get-Command python -ErrorAction SilentlyContinue) {"✔ Python  "} else {"✘ Python  "}
-$reqTxt += if ($isAdmin) {"✔ Admin  "} else {"✘ Admin  "}
-$reqTxt += if ([System.Environment]::OSVersion.Platform -eq "Win32NT") {"✔ Windows"} else {"✘ Windows"}
+$qlSI = New-Btn "▶  SI Deep Scan" 480 254 150 36 $cRED ([System.Drawing.Color]::White)
+$qlSI.Add_Click({ Show-Page "System Informer" })
+$pSetup.Controls.Add($qlSI)
+
+$reqTxt  = if ($isAdmin) {"✔ Admin  "} else {"✘ Admin  "}
+$reqTxt += if ([System.Environment]::OSVersion.Platform -eq "Win32NT") {"✔ Windows  "} else {"✘ Windows  "}
+$siFound = $SI_PATHS | Where-Object { Test-Path $_ } | Select-Object -First 1
+$reqTxt += if ($siFound) {"✔ System Informer"} else {"✘ System Informer (get from systeminformer.sourceforge.io)"}
 $pSetup.Controls.Add((New-Lbl "Requirements" 20 310 200 22 $cACCENT $cBG $fBold))
-$pSetup.Controls.Add((New-Lbl $reqTxt 20 336 600 24 $cTEXT $cBG $fMono))
+$pSetup.Controls.Add((New-Lbl $reqTxt 20 336 900 24 $cTEXT $cBG $fMono))
 
 $scanTopBar = New-Object System.Windows.Forms.Panel
 $scanTopBar.Dock="Top"; $scanTopBar.Height=48; $scanTopBar.BackColor=$cBG2
@@ -198,8 +226,7 @@ $scanSplit.Panel2.Controls.Add((New-Lbl "SCAN LOG" 10 8 200 18 $cDIM $cBG $fTiny
 $scanLog = New-Tbox 6 28 0 0 $true; $scanLog.Dock="Fill"; $scanLog.BackColor=$cBG
 $scanSplit.Panel2.Controls.Add($scanLog)
 $stopScanBtn = New-Btn "■  STOP" 940 10 100 28 $cRED ([System.Drawing.Color]::White)
-$stopScanBtn.Enabled=$false
-$stopScanBtn.Add_Click({ $global:StopScan=$true })
+$stopScanBtn.Enabled=$false; $stopScanBtn.Add_Click({ $global:StopScan=$true })
 $scanTopBar.Controls.Add($stopScanBtn)
 $startScanBtn = New-Btn "▶  START SCAN" 820 10 116 28 $cGREEN $cBG
 $scanTopBar.Controls.Add($startScanBtn)
@@ -297,8 +324,7 @@ $startScanBtn.Add_Click({
         Log $scanLog "Report saved to $out\scan_$stamp.txt"
         $scanProg.Invoke([Action]{ $scanProg.Value=100 })
         Set-Status "Done — $($global:Findings.Count) findings, $crits critical"
-        Log $scanLog ""
-        Log $scanLog "Scan complete."
+        Log $scanLog ""; Log $scanLog "Scan complete."
         $startScanBtn.Invoke([Action]{ $startScanBtn.Enabled=$true })
         $stopScanBtn.Invoke([Action]{ $stopScanBtn.Enabled=$false })
     })
@@ -311,8 +337,7 @@ $pMemory.Controls.Add($memTopBar)
 $memTopBar.Controls.Add((New-Lbl "MEMORY SCANNER" 16 14 400 22 $cACCENT $cBG2 $fBold))
 $memTopBar.Controls.Add((New-Lbl "Scans javaw.exe RAM for cheat signatures" 230 16 400 18 $cDIM $cBG2 $fTiny))
 $stopMemBtn = New-Btn "■  STOP" 940 10 100 28 $cRED ([System.Drawing.Color]::White)
-$stopMemBtn.Enabled=$false
-$stopMemBtn.Add_Click({ $global:StopMem=$true })
+$stopMemBtn.Enabled=$false; $stopMemBtn.Add_Click({ $global:StopMem=$true })
 $memTopBar.Controls.Add($stopMemBtn)
 $startMemBtn = New-Btn "▶  SCAN MEMORY" 800 10 136 28 $cACCENT $cBG
 $memTopBar.Controls.Add($startMemBtn)
@@ -431,6 +456,170 @@ $runSysBtn.Add_Click({
         } catch { $hwidVal.Invoke([Action]{ $hwidVal.Text="Error: $_" }); Log $sysLog "HWID failed: $_" }
         Log $sysLog ""; Log $sysLog "All checks complete."
         Set-Status "Sys info checks complete"
+    })
+    $t.IsBackground=$true; $t.Start()
+})
+
+$siTopBar = New-Object System.Windows.Forms.Panel
+$siTopBar.Dock="Top"; $siTopBar.Height=48; $siTopBar.BackColor=$cBG2
+$pSI.Controls.Add($siTopBar)
+$siTopBar.Controls.Add((New-Lbl "SYSTEM INFORMER DEEP SCAN" 16 14 400 22 $cACCENT $cBG2 $fBold))
+$siTopBar.Controls.Add((New-Lbl "Automates SI: finds javaw, opens memory, searches strings (case insensitive, private mapping)" 430 16 580 18 $cDIM $cBG2 $fTiny))
+
+$stopSIBtn = New-Btn "■  STOP" 940 10 100 28 $cRED ([System.Drawing.Color]::White)
+$stopSIBtn.Enabled=$false; $stopSIBtn.Add_Click({ $global:StopSI=$true })
+$siTopBar.Controls.Add($stopSIBtn)
+$startSIBtn = New-Btn "▶  RUN SI SCAN" 810 10 126 28 $cRED ([System.Drawing.Color]::White)
+$siTopBar.Controls.Add($startSIBtn)
+
+$siInfoPanel = New-Object System.Windows.Forms.Panel
+$siInfoPanel.Dock="Top"; $siInfoPanel.Height=56; $siInfoPanel.BackColor=$cBG3
+$pSI.Controls.Add($siInfoPanel)
+$siStatusVal = New-Lbl "Idle — press Run SI Scan to start" 16 8 700 18 $cDIM $cBG3 $fMono
+$siInfoPanel.Controls.Add($siStatusVal)
+$siKeywordVal = New-Lbl "Keywords: $($SI_KEYWORDS.Count) loaded" 16 30 700 18 $cDIM $cBG3 $fTiny
+$siInfoPanel.Controls.Add($siKeywordVal)
+
+$siSplit = New-Object System.Windows.Forms.SplitContainer
+$siSplit.Dock="Fill"; $siSplit.SplitterDistance=320; $siSplit.BackColor=$cBORDER
+$siSplit.Panel1.BackColor=$cBG2; $siSplit.Panel2.BackColor=$cBG
+$pSI.Controls.Add($siSplit)
+
+$siSplit.Panel1.Controls.Add((New-Lbl "HITS" 10 8 200 18 $cDIM $cBG2 $fTiny))
+$siHitBox = New-Object System.Windows.Forms.ListBox
+$siHitBox.Location=New-Object System.Drawing.Point(6,30); $siHitBox.Size=New-Object System.Drawing.Size(302,530)
+$siHitBox.BackColor=$cBG2; $siHitBox.ForeColor=$cRED; $siHitBox.BorderStyle="None"; $siHitBox.Font=$fMono
+$siSplit.Panel1.Controls.Add($siHitBox)
+
+$siSplit.Panel2.Controls.Add((New-Lbl "SI SCAN LOG" 10 8 200 18 $cDIM $cBG $fTiny))
+$siLog = New-Tbox 6 28 0 0 $true; $siLog.Dock="Fill"; $siLog.BackColor=$cBG
+$siSplit.Panel2.Controls.Add($siLog)
+
+$startSIBtn.Add_Click({
+    $global:OutFolder=$OutEntry.Text.Trim()
+    if (-not $global:OutFolder -or -not (Test-Path $global:OutFolder)) { Log $siLog "[ERROR] Set a valid output folder in Setup first."; return }
+    $siLog.Clear(); $siHitBox.Items.Clear(); $global:StopSI=$false
+    $startSIBtn.Enabled=$false; $stopSIBtn.Enabled=$true
+    $siStatusVal.Text="Starting..."; Set-Status "System Informer scan running..."
+
+    $t=[System.Threading.Thread]::new({
+        $out=$global:OutFolder
+        Log $siLog "SI Deep Scan started  $(Get-Date -Format 'HH:mm:ss')"
+        Log $siLog ""
+
+        $siExe = $SI_PATHS | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $siExe) {
+            Log $siLog "[ERROR] System Informer not found."
+            Log $siLog "Download from: https://systeminformer.sourceforge.io"
+            $siStatusVal.Invoke([Action]{ $siStatusVal.Text="System Informer not found" })
+            $startSIBtn.Invoke([Action]{$startSIBtn.Enabled=$true}); $stopSIBtn.Invoke([Action]{$stopSIBtn.Enabled=$false})
+            Set-Status "SI not found"; return
+        }
+        Log $siLog "✔ Found: $siExe"
+
+        $siProc = Get-Process -Name "SystemInformer","ProcessHacker" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $siProc) {
+            Log $siLog "Launching System Informer..."
+            Start-Process $siExe
+            Start-Sleep -Seconds 3
+            $siProc = Get-Process -Name "SystemInformer","ProcessHacker" -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if (-not $siProc) { Log $siLog "[ERROR] Could not launch System Informer."; $startSIBtn.Invoke([Action]{$startSIBtn.Enabled=$true}); $stopSIBtn.Invoke([Action]{$stopSIBtn.Enabled=$false}); return }
+        Log $siLog "✔ System Informer running PID $($siProc.Id)"
+
+        $javaw = Get-Process -Name "javaw" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $javaw) {
+            Log $siLog "[WARN] No javaw.exe found — is Minecraft running?"
+            $siStatusVal.Invoke([Action]{ $siStatusVal.Text="No javaw.exe found" })
+            $startSIBtn.Invoke([Action]{$startSIBtn.Enabled=$true}); $stopSIBtn.Invoke([Action]{$stopSIBtn.Enabled=$false})
+            Set-Status "No Minecraft found"; return
+        }
+        Log $siLog "✔ javaw.exe PID $($javaw.Id)"
+        $siStatusVal.Invoke([Action]{ $siStatusVal.Text="Searching $($SI_KEYWORDS.Count) keywords in PID $($javaw.Id)..." })
+
+        Add-Type @"
+using System; using System.Runtime.InteropServices; using System.Text;
+public class SIMemSearch {
+    [DllImport("kernel32.dll")] public static extern IntPtr OpenProcess(uint a,bool b,int c);
+    [DllImport("kernel32.dll")] public static extern bool ReadProcessMemory(IntPtr h,IntPtr a,byte[] b,int s,out int r);
+    [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll")] public static extern int VirtualQueryEx(IntPtr h,IntPtr a,out MBI2 m,uint s);
+    [StructLayout(LayoutKind.Sequential)] public struct MBI2 { public IntPtr Base,AllocBase; public uint AllocProtect; public IntPtr RegionSize; public uint State,Protect,Type; }
+}
+"@ -ErrorAction SilentlyContinue
+
+        $handle=[SIMemSearch]::OpenProcess(0x0410,$false,$javaw.Id)
+        if ($handle -eq [IntPtr]::Zero) {
+            Log $siLog "[ERROR] Cannot open javaw.exe — ensure running as admin"
+            $startSIBtn.Invoke([Action]{$startSIBtn.Enabled=$true}); $stopSIBtn.Invoke([Action]{$stopSIBtn.Enabled=$false}); return
+        }
+
+        $allHits = @{}
+        $addr=[IntPtr]::Zero; $scanned=0
+
+        Log $siLog "Scanning private memory regions (case insensitive strings)..."
+        Log $siLog ""
+
+        while ($scanned -lt 1GB -and -not $global:StopSI) {
+            $mbi=New-Object SIMemSearch+MBI2
+            $ret=[SIMemSearch]::VirtualQueryEx($handle,$addr,[ref]$mbi,[System.Runtime.InteropServices.Marshal]::SizeOf($mbi))
+            if ($ret -eq 0) { break }
+            $size=$mbi.RegionSize.ToInt64()
+            if ($size -le 0) { break }
+            $isPrivate = $mbi.Type -eq 0x20000
+            $isCommit  = $mbi.State -eq 0x1000
+            $isRead    = ($mbi.Protect -eq 0x02 -or $mbi.Protect -eq 0x04 -or $mbi.Protect -eq 0x20 -or $mbi.Protect -eq 0x40)
+            if ($isPrivate -and $isCommit -and $isRead) {
+                $buf=New-Object byte[] ([Math]::Min($size,8MB)); $read=0
+                if ([SIMemSearch]::ReadProcessMemory($handle,$mbi.Base,$buf,$buf.Length,[ref]$read) -and $read -gt 0) {
+                    $str=[System.Text.Encoding]::UTF8.GetString($buf,0,$read)
+                    foreach ($kw in $SI_KEYWORDS) {
+                        if ($str.IndexOf($kw,[System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                            if (-not $allHits[$kw]) {
+                                $allHits[$kw] = 0
+                            }
+                            $allHits[$kw]++
+                        }
+                    }
+                }
+                $scanned+=$read
+            }
+            $next=$mbi.Base.ToInt64()+$size
+            if ($next -ge 0x7FFFFFFFFFFF) { break }
+            $addr=[IntPtr]::new($next)
+        }
+        [SIMemSearch]::CloseHandle($handle)|Out-Null
+
+        Log $siLog "Scan complete — writing results..."
+        Log $siLog ""
+
+        $stamp=Get-Date -Format "yyyyMMdd_HHmmss"
+        $reportLines=@("="*60,"  SS TOOL — SYSTEM INFORMER DEEP SCAN","  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')","  javaw.exe PID $($javaw.Id)","="*60,"")
+
+        $hitCount=0
+        foreach ($kw in $SI_KEYWORDS) {
+            if ($allHits[$kw] -and $allHits[$kw] -gt 0) {
+                $cnt=$allHits[$kw]
+                Log $siLog "[CRIT] HIT: '$kw' — $cnt region(s)"
+                $siHitBox.Invoke([Action]{ $siHitBox.Items.Add("[CRIT] $kw  ($cnt regions)") | Out-Null })
+                $reportLines+="  [HIT]  $kw  —  $cnt memory region(s)"
+                $hitCount++
+            } else {
+                Log $siLog "✔ Clean: $kw"
+                $reportLines+="  [OK]   $kw"
+            }
+        }
+
+        $reportLines+=@("","="*60,"  Total keywords hit: $hitCount / $($SI_KEYWORDS.Count)","="*60)
+        $reportLines|Out-File "$out\si_scan_$stamp.txt" -Encoding UTF8
+        Log $siLog ""
+        Log $siLog "Report saved to $out\si_scan_$stamp.txt"
+        Log $siLog ""
+        Log $siLog "SI scan complete — $hitCount keyword(s) hit out of $($SI_KEYWORDS.Count)"
+
+        $siStatusVal.Invoke([Action]{ $siStatusVal.Text="Done — $hitCount hit(s) out of $($SI_KEYWORDS.Count) keywords" })
+        Set-Status "SI scan done — $hitCount hit(s)"
+        $startSIBtn.Invoke([Action]{$startSIBtn.Enabled=$true}); $stopSIBtn.Invoke([Action]{$stopSIBtn.Enabled=$false})
     })
     $t.IsBackground=$true; $t.Start()
 })
